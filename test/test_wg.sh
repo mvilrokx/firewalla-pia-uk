@@ -28,6 +28,9 @@ apply_live vpn_X SAME SAME 85.203.46.72 10.1.1.1 10.1.1.1
 assert_eq "apply_live: unchanged → one wg set" "$(cat "$SHIM_LOG")" \
   "wg set vpn_X peer SAME endpoint 85.203.46.72:1337 allowed-ips 0.0.0.0/0 persistent-keepalive 25"
 SHIM_WG_SET_RC=1 apply_live vpn_X SAME SAME 1.2.3.4 10.1.1.1 10.1.1.1; assert_eq "apply_live: wg set fails" "$?" 1
+: > "$SHIM_LOG"
+SHIM_IP_ADD_RC=2 apply_live vpn_X OLDPUB NEWPUB 85.203.46.72 10.1.1.1 10.2.2.2; assert_eq "apply_live: ip addr add fails" "$?" 1
+assert_not_contains "apply_live: old address kept when add fails" "$(cat "$SHIM_LOG")" "ip addr del"
 
 rm -f "$SHIM_STATE/fresh"
 SHIM_HANDSHAKE_AGE=10 wait_handshake vpn_X; assert_eq "wait_handshake: fresh" "$?" 0

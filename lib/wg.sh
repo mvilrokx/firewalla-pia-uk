@@ -27,7 +27,8 @@ apply_live() {
   fi
   sudo wg set "$iface" peer "$new_pub" endpoint "$ip:1337" allowed-ips 0.0.0.0/0 persistent-keepalive 25 || return 1
   if [[ $old_addr != "$new_addr" ]]; then
-    sudo ip addr add "$new_addr/32" dev "$iface"
+    # Keep the old address unless the new one is in place.
+    sudo ip addr add "$new_addr/32" dev "$iface" || return 1
     sudo ip addr del "$old_addr/32" dev "$iface"
   fi
 }

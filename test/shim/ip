@@ -6,4 +6,5 @@ if [[ "${1:-} ${2:-}" == "link show" && ${SHIM_IFACE_MISSING:-0} == 1 ]]; then
   echo "Device \"${3:-}\" does not exist." >&2
   exit 1
 fi
+if [[ "${1:-} ${2:-}" == "addr add" ]]; then exit "${SHIM_IP_ADD_RC:-0}"; fi
 exit 0
