@@ -61,7 +61,8 @@ cmd_status() {
     up=0; healthy=0
   fi
 
-  last=$(grep 'repaired:' "$LOG_FILE" 2>/dev/null | tail -n 1)
+  # The log can also hold repairs of a client that the user has since replaced.
+  last=$(grep -F "(profile $id, backup: " "$LOG_FILE" 2>/dev/null | tail -n 1)
   row "last repair" "${last:-none}"
   fails=$(state_num fail_count); next=$(state_num next_attempt)
   if (( fails > 0 && next > 0 )); then

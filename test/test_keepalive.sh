@@ -78,7 +78,7 @@ assert_contains "addKey error: PIA answered, so the same server next time" "$(lo
 
 reset; out=$(SHIM_HANDSHAKE_AGE=100000 run)
 assert_eq "repair: rc 0" "$out" "rc=0"
-assert_contains "repair: logged" "$(logtext)" "repaired: now on 85.203.46.72 (Server-10870-2a), address 10.186.0.136 — handshake OK (backup: $APP_DIR/backup/"
+assert_contains "repair: logged with the client" "$(logtext)" "repaired: now on 85.203.46.72 (Server-10870-2a), address 10.186.0.136 — handshake OK (profile 1D17_1D170, backup: $APP_DIR/backup/"
 assert_contains "repair: live swap" "$(cat "$SHIM_LOG")" "$(printf '%s\n' \
   'wg set vpn_1D17_1D170 peer OLDSERVERKEY= remove' \
   'wg set vpn_1D17_1D170 peer NEWSERVERKEY0000000000000000000000000000000= endpoint 85.203.46.72:1337 allowed-ips 0.0.0.0/0 persistent-keepalive 25' \

@@ -146,7 +146,7 @@ cmd_keepalive() {
   # instead of registering again (and making a new backup) every 5 minutes.
   wait_handshake "$iface" "$since" \
     || fail "registered on $server_ip ($server_cn), address $new_addr, but no handshake within 30 s (backup: $backup)"
-  log "repaired: now on $server_ip ($server_cn), address $new_addr — handshake OK (backup: $backup)"
+  log "repaired: now on $server_ip ($server_cn), address $new_addr — handshake OK (profile $id, backup: $backup)"
   state_set fail_count 0
   state_set next_attempt 0
   state_set avoid_ip ""

@@ -17,12 +17,18 @@ assert_eq "classify: HTML that mentions \"media\" → not OK" "$(bbc_classify '<
 assert_eq "classify: another refusal" "$(bbc_classify '{"result":"notukerror"}')" "result:notukerror"
 assert_eq "classify: odd characters in the reason" "$(bbc_classify '{"result":"a b\u001b[2J"}')" "result:a?b??2J"
 
-printf '2026-11-01 03:10:22 repaired: now on 85.203.46.72 (Server-10870-2a), address 10.186.0.136 — handshake OK (backup: x)\n' > "$APP_DIR/keepalive.log"
+printf '%s\n' '2026-11-01 03:10:22 repaired: now on 85.203.46.72 (Server-10870-2a), address 10.186.0.136 — handshake OK (profile 1D17_1D170, backup: x)' \
+  '2026-11-01 04:00:00 repaired: now on 85.203.46.73 (Server-10871-2a), address 10.186.0.137 — handshake OK (profile 2C3D_2C3D0, backup: y)' \
+  '2026-11-01 05:00:00 repaired: now on 85.203.46.74 (Server-10872-2a), address 10.186.0.138 — handshake OK (backup: z)' \
+  > "$APP_DIR/keepalive.log"
 : > "$SHIM_LOG"; out=$(SHIM_HANDSHAKE_AGE=10 st)
 assert_contains "healthy: client" "$out" "client:      PIA UK Streaming (WG) (1D17_1D170)"
 assert_contains "healthy: server" "$out" "server:      85.203.46.180"
 assert_contains "healthy: handshake" "$out" " s ago"
-assert_contains "healthy: last repair" "$out" "last repair: 2026-11-01 03:10:22 repaired: now on 85.203.46.72"
+assert_contains "healthy: last repair of this client, not of another one" "$out" "last repair: 2026-11-01 03:10:22 repaired: now on 85.203.46.72"
+echo '2026-11-01 04:00:00 repaired: now on 85.203.46.73 (Server-10871-2a), address 10.186.0.137 — handshake OK (profile 2C3D_2C3D0, backup: y)' > "$APP_DIR/keepalive.log"
+out=$(SHIM_HANDSHAKE_AGE=10 st)
+assert_contains "only another client was repaired: none" "$out" "last repair: none"
 assert_contains "healthy: BBC" "$out" "BBC:         OK"
 assert_not_contains "healthy: no failures line" "$out" "failures:"
 assert_contains "healthy: rc 0" "$out" "rc=0"
