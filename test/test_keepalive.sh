@@ -62,7 +62,7 @@ assert_eq "repair: rc 0" "$out" "rc=0"
 assert_contains "repair: logged" "$(logtext)" "repaired: now on 85.203.46.72 (Server-10870-2a), address 10.186.0.136 — handshake OK (backup: $APP_DIR/backup/"
 assert_contains "repair: live swap" "$(cat "$SHIM_LOG")" "$(printf '%s\n' \
   'wg set vpn_1D17_1D170 peer OLDSERVERKEY= remove' \
-  'wg set vpn_1D17_1D170 peer NEWSERVERKEY= endpoint 85.203.46.72:1337 allowed-ips 0.0.0.0/0 persistent-keepalive 25' \
+  'wg set vpn_1D17_1D170 peer NEWSERVERKEY0000000000000000000000000000000= endpoint 85.203.46.72:1337 allowed-ips 0.0.0.0/0 persistent-keepalive 25' \
   'ip addr add 10.186.0.136/32 dev vpn_1D17_1D170' \
   'ip addr del 10.65.10.126/32 dev vpn_1D17_1D170')"
 assert_contains "repair: files patched" "$(cat "$WG_DIR/1D17_1D170.json")" '"endpoint":"85.203.46.72:1337"'

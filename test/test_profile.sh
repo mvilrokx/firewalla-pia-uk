@@ -21,14 +21,14 @@ assert_eq "backup has three files" "$(ls "$bdir" | wc -l | tr -d ' ')" "3"
 assert_eq "keeps newest 10 backups" "$(ls "$APP_DIR/backup" | wc -l | tr -d ' ')" "10"
 assert_eq "new backup kept" "$(ls "$APP_DIR/backup" | tail -1)" "$(basename "$bdir")"
 
-patch_profile 1D17_1D170 85.203.46.72 NEWSERVERKEY= 10.186.0.136
+patch_profile 1D17_1D170 85.203.46.72 NEWSERVERKEY0000000000000000000000000000000= 10.186.0.136
 assert_eq "conf: only key and endpoint change" "$(cat "$WG_DIR/1D17_1D170.conf"; echo '|')" \
-  "$(printf '[Interface]\nPrivateKey = FAKEPRIVATEKEY=\n[Peer]\nPersistentKeepalive = 25\nPublicKey = NEWSERVERKEY=\nEndpoint = 85.203.46.72:1337\nAllowedIPs = 0.0.0.0/0|')"
+  "$(printf '[Interface]\nPrivateKey = FAKEPRIVATEKEY=\n[Peer]\nPersistentKeepalive = 25\nPublicKey = NEWSERVERKEY0000000000000000000000000000000=\nEndpoint = 85.203.46.72:1337\nAllowedIPs = 0.0.0.0/0|')"
 assert_eq "json" "$(cat "$WG_DIR/1D17_1D170.json")" \
-  '{"addresses":["10.186.0.136/32"],"dns":["10.0.0.243"],"peers":[{"persistentKeepalive":"25","publicKey":"NEWSERVERKEY=","endpoint":"85.203.46.72:1337","allowedIPs":["0.0.0.0/0"]}],"privateKey":"FAKEPRIVATEKEY="}'
+  '{"addresses":["10.186.0.136/32"],"dns":["10.0.0.243"],"peers":[{"persistentKeepalive":"25","publicKey":"NEWSERVERKEY0000000000000000000000000000000=","endpoint":"85.203.46.72:1337","allowedIPs":["0.0.0.0/0"]}],"privateKey":"FAKEPRIVATEKEY="}'
 assert_eq "settings: only serverDDNS changes" "$(cat "$WG_DIR/1D17_1D170.settings")" \
   "$(sed 's/"serverDDNS":"85.203.46.180"/"serverDDNS":"85.203.46.72"/' "$FIXTURES/profile/1D17_1D170.settings")"
-assert_eq "find_profile sees the patch" "$(find_profile)" "1D17_1D170 85.203.46.72 NEWSERVERKEY= 10.186.0.136"
+assert_eq "find_profile sees the patch" "$(find_profile)" "1D17_1D170 85.203.46.72 NEWSERVERKEY0000000000000000000000000000000= 10.186.0.136"
 
 cp "$FIXTURES"/imported/* "$WG_DIR/"
 assert_eq "two PIA clients listed" "$(find_profiles | tr '\n' ' ')" "1D17_1D170 2C3D_2C3D0 "
@@ -43,7 +43,7 @@ find_profile >/dev/null 2>&1; assert_eq "unreadable json → 3" "$?" 3
 
 cp "$FIXTURES"/profile/* "$WG_DIR/"
 chmod 444 "$WG_DIR/1D17_1D170.settings"
-patch_profile 1D17_1D170 85.203.46.72 NEWSERVERKEY= 10.186.0.136 2>/dev/null
+patch_profile 1D17_1D170 85.203.46.72 NEWSERVERKEY0000000000000000000000000000000= 10.186.0.136 2>/dev/null
 assert_eq "read-only file → patch fails" "$?" 1
 assert_eq "read-only file → json unchanged" "$(cat "$WG_DIR/1D17_1D170.json")" "$(cat "$FIXTURES/profile/1D17_1D170.json")"
 assert_eq "read-only file → conf unchanged" "$(cat "$WG_DIR/1D17_1D170.conf")" "$(cat "$FIXTURES/profile/1D17_1D170.conf")"

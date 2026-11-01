@@ -1,13 +1,24 @@
 #!/bin/bash
-# Test stand-in for curl. Records every argument, answers the PIA and BBC
-# calls from fixtures, and passes file:// URLs to the real curl.
-if [[ -n ${SHIM_LOG:-} ]]; then
-  for arg in "$@"; do printf 'curl-arg %s\n' "$arg"; done >> "$SHIM_LOG"
-fi
-url=""
+# Test stand-in for curl. Records every argument and, with `-K -`, every config
+# line it reads on stdin. Answers the PIA and BBC calls from fixtures, and passes
+# file:// URLs to the real curl. SHIM_CURL_FAIL_URL=<part of a URL> makes that
+# call fail like a timeout.
+url="" config_on_stdin=0 prev=""
 for arg in "$@"; do
   case $arg in http*|file:*) url=$arg ;; esac
+  if [[ $prev == -K && $arg == - ]]; then config_on_stdin=1; fi
+  prev=$arg
 done
+if [[ -n ${SHIM_LOG:-} ]]; then
+  for arg in "$@"; do printf 'curl-arg %s\n' "$arg"; done >> "$SHIM_LOG"
+  if (( config_on_stdin )); then
+    while IFS= read -r line; do printf 'curl-config %s\n' "$line"; done >> "$SHIM_LOG"
+  fi
+fi
+if [[ -n ${SHIM_CURL_FAIL_URL:-} && $url == *"$SHIM_CURL_FAIL_URL"* ]]; then
+  echo "curl: (28) Operation timed out (test)" >&2
+  exit 28
+fi
 default_token='{"token":"TKN"}'
 case $url in
   file:*) exec /usr/bin/curl "$@" ;;
@@ -15,4 +26,4 @@ case $url in
   */addKey*) cat "${SHIM_ADDKEY_FILE:-$FIXTURES/addkey_ok.json}" ;;
   *mediaselector*) cat "${SHIM_BBC_FILE:-$FIXTURES/mediaselector_ok.json}" ;;
 esac
-exit "${SHIM_CURL_RC:-0}"
+exit 0
