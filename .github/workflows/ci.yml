@@ -1,0 +1,20 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # /bin/bash is bash 3.2 on macOS: the code must run there as well.
+      - run: /bin/bash test/run.sh
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git ls-files -z -- '*.sh' 'bin/*' 'test/shim/*' | xargs -0 shellcheck
