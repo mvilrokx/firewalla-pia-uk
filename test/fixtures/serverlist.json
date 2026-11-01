@@ -1,0 +1,2 @@
+{"groups":{},"regions":[{"id":"uk_2","name":"UK Streaming Optimized","servers":{"wg":[{"ip":"85.203.46.72","cn":"Server-10870-2a"},{"ip":"85.203.46.73","cn":"Server-10871-2a"}]}},{"id":"uk_london","name":"UK London","servers":{"wg":[{"ip":"212.102.53.10","cn":"london401"}]}},{"id":"uk_manchester","name":"UK Manchester","servers":{"ovpnudp":[{"ip":"1.1.1.1","cn":"manchester401"}]}}]}
+ZmFrZS1zaWduYXR1cmU=

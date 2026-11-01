@@ -1,0 +1,18 @@
+#!/bin/bash
+# Test stand-in for curl. Records every argument, answers the PIA and BBC
+# calls from fixtures, and passes file:// URLs to the real curl.
+if [[ -n ${SHIM_LOG:-} ]]; then
+  for arg in "$@"; do printf 'curl-arg %s\n' "$arg"; done >> "$SHIM_LOG"
+fi
+url=""
+for arg in "$@"; do
+  case $arg in http*|file:*) url=$arg ;; esac
+done
+default_token='{"token":"TKN"}'
+case $url in
+  file:*) exec /usr/bin/curl "$@" ;;
+  */token*) printf '%s' "${SHIM_TOKEN_BODY-$default_token}" ;;
+  */addKey*) cat "${SHIM_ADDKEY_FILE:-$FIXTURES/addkey_ok.json}" ;;
+  *mediaselector*) cat "${SHIM_BBC_FILE:-$FIXTURES/mediaselector_ok.json}" ;;
+esac
+exit "${SHIM_CURL_RC:-0}"
