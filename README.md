@@ -30,8 +30,8 @@ Connect to the box with SSH as `pi`, then:
 
 ```bash
 cd /tmp
-curl -fsSL -o firewalla-pia-uk.tar.gz https://github.com/mvilrokx/firewalla-pia-uk/archive/refs/tags/v0.1.0.tar.gz
-tar xzf firewalla-pia-uk.tar.gz && cd firewalla-pia-uk-0.1.0
+curl -fsSL -o firewalla-pia-uk.tar.gz https://github.com/mvilrokx/firewalla-pia-uk/archive/refs/tags/v0.1.1.tar.gz
+tar xzf firewalla-pia-uk.tar.gz && cd firewalla-pia-uk-0.1.1
 less install.sh   # read it first
 ./install.sh
 ```
@@ -131,15 +131,19 @@ Every 5 minutes the keepalive:
 
 1. Finds the PIA client: the one WireGuard client on port 1337.
 2. Does nothing if the client is turned off in the app, or if the handshake is
-   younger than 5 minutes (no Internet calls in that case).
-3. Otherwise reads PIA's server list. If the client's server is gone (retired), it
-   takes the current UK streaming server (`uk_2`).
+   younger than 5 minutes (no Internet calls in that case). A client that has never
+   had a handshake gets 30 seconds first, because Firewalla may have just started it.
+3. Otherwise reads PIA's server list. If the client's server is not in the list now,
+   it moves to the first UK streaming server (`uk_2`) in the list. (The list shows a
+   changing subset of PIA's servers, so "not in the list" does not always mean that
+   the server is gone, but a listed server is always a safe choice.)
 4. Gets a token with your PIA login and registers the client's public key again.
 5. Backs up the client's three profile files (the newest 10 backups are kept in
    `backup/`), writes the new server, server key, and address into them, and
    applies the change to the live tunnel. Firewalla's app shows the new values.
 
-After a failure it waits 15 minutes, then 30, and so on, up to 6 hours.
+After a failure it waits 15 minutes, then 30, and so on, up to 6 hours. Only one
+run happens at a time, also when you start one by hand while cron starts another.
 
 It writes only to its own folder, to one line in `user_crontab`, and to the three
 profile files of the PIA client.
@@ -147,18 +151,22 @@ profile files of the PIA client.
 ## Troubleshooting
 
 - **`BBC: blocked (geolocation)`** while the handshake is recent — BBC blocks the
-  exit IP that PIA gave you. Nothing repairs this automatically. You can force a new
-  registration with
-  `/home/pi/.firewalla/config/firewalla-pia-uk/bin/firewalla-pia-uk keepalive --force`,
-  which possibly gives a different exit IP.
-- **`handshake: never`** with failures — read `keepalive.log`. `PIA login failed`
-  means PIA rejected the saved login: delete `credentials` and run `./install.sh`
-  again.
+  exit IP of the PIA server you are on. The tunnel works, so the keepalive does not
+  act. PIA changes its UK streaming servers often, and a later server may not be
+  blocked.
+- **`handshake: never`** with failures — read `keepalive.log`.
+  - `PIA rejected the saved login`: delete
+    `/home/pi/.firewalla/config/firewalla-pia-uk/credentials`, then run the installer
+    again (see [Update](#update)). It asks for the login.
+  - `cannot reach PIA's login server`: the box cannot reach PIA. The keepalive tries
+    again later by itself.
 - **"more than one PIA client"** — delete the extra WireGuard clients on port 1337
   in the app. The keepalive does nothing until only one is left.
 - **Setup timed out** — import the file the installer named
   (`/home/pi/.firewalla/config/firewalla-pia-uk/pia-uk.conf`) with **Import
-  Profile**, then run `./install.sh` again. It finds the client and continues.
+  Profile**, then run `./install.sh` again. It finds the client and continues. If
+  the unpacked folder in `/tmp` is gone (for example after a reboot), download the
+  release again as in [Install](#install).
 - **iPlayer fails on an IPv6 network** while `status` is OK — the tunnel carries IPv4
   only. BBC has no IPv6 addresses today (October 2026). If that changes, BBC traffic
   can go around the tunnel over IPv6.
@@ -166,7 +174,7 @@ profile files of the PIA client.
 ## Update
 
 Download the new release as in [Install](#install) and run `./install.sh` again. It
-keeps your PIA login and your client.
+keeps your PIA login and your client, and updates the cron line.
 
 ## Uninstall
 
