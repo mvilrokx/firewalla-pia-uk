@@ -71,8 +71,11 @@ Send only BBC traffic through the tunnel:
    - `vod-hls-uk-live.akamaized.net`
    - `as-hls-uk-live.akamaized.net`
    - `as-dash-uk-live.akamaized.net`
-2. Make a **Route** rule: target list "BBC iPlayer" → via your PIA WireGuard client,
-   **Route Preference: Static**, scope **All Devices**.
+2. In the phone app, tap **Routes** on the box's main page, then **+**, and make a
+   route with **Matching:** Target List "BBC iPlayer", **On:** All Devices,
+   **Interface:** your PIA WireGuard client, and **Route Preference:** Static.
+   If you later replace the PIA client, open this route under **Routes** and select
+   the new client as **Interface**.
 
 Good to know:
 
