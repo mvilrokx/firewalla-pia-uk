@@ -1,0 +1,1 @@
+{"addresses":["10.186.0.136/32"],"dns":["10.0.0.243"],"peers":[{"persistentKeepalive":"25","publicKey":"NEWSERVERKEY=","endpoint":"85.203.46.72:1337","allowedIPs":["0.0.0.0/0"]}],"privateKey":"PRIVTEST="}

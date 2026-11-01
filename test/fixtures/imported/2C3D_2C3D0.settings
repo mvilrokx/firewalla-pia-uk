@@ -1,0 +1,1 @@
+{"serverSubnets":[],"overrideDefaultRoute":true,"routeDNS":true,"c2sSNATDisabled":false,"strictVPN":false,"displayName":"PIA UK Streaming","createdDate":1793500000.123456,"serverVPNPort":1337,"subtype":"wireguard","serverDDNS":"85.203.46.72"}

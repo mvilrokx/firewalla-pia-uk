@@ -1,0 +1,1 @@
+{"addresses":["10.65.10.126/32"],"dns":["10.0.0.243"],"peers":[{"persistentKeepalive":"25","publicKey":"OLDSERVERKEY=","endpoint":"85.203.46.180:1337","allowedIPs":["0.0.0.0/0"]}],"privateKey":"FAKEPRIVATEKEY="}
