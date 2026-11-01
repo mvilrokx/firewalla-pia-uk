@@ -11,7 +11,9 @@ handshake_age() {
   if (( newest == 0 )); then echo 999999999; else echo $(( $(date +%s) - newest )); fi
 }
 
-interface_exists() { sudo wg show "$1" > /dev/null 2>&1; }
+# `ip link show` needs no sudo, so a broken sudo or wg shows up as a loud
+# failure later, not as "the client is turned off".
+interface_exists() { ip link show "$1" > /dev/null 2>&1; }
 
 client_pubkey() { sudo wg show "$1" public-key 2>/dev/null; }
 

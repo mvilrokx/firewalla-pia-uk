@@ -37,5 +37,21 @@ find_profile >/dev/null 2>&1; assert_eq "two PIA clients → 2" "$?" 2
 rm -f "$WG_DIR"/1D17_1D170.* "$WG_DIR"/2C3D_2C3D0.*
 find_profile >/dev/null 2>&1; assert_eq "no PIA client → 1" "$?" 1
 
+cp "$FIXTURES"/profile/* "$WG_DIR/"
+printf '{"addresses":["10.65.10.126/32"]}' > "$WG_DIR/1D17_1D170.json"
+find_profile >/dev/null 2>&1; assert_eq "unreadable json → 3" "$?" 3
+
+cp "$FIXTURES"/profile/* "$WG_DIR/"
+chmod 444 "$WG_DIR/1D17_1D170.settings"
+patch_profile 1D17_1D170 85.203.46.72 NEWSERVERKEY= 10.186.0.136 2>/dev/null
+assert_eq "read-only file → patch fails" "$?" 1
+assert_eq "read-only file → json unchanged" "$(cat "$WG_DIR/1D17_1D170.json")" "$(cat "$FIXTURES/profile/1D17_1D170.json")"
+assert_eq "read-only file → conf unchanged" "$(cat "$WG_DIR/1D17_1D170.conf")" "$(cat "$FIXTURES/profile/1D17_1D170.conf")"
+chmod 644 "$WG_DIR/1D17_1D170.settings"
+
+rm -rf "$APP_DIR/backup"; mkdir "$APP_DIR/backup"; chmod 555 "$APP_DIR/backup"
+backup_profile 1D17_1D170 >/dev/null 2>&1; assert_eq "backup fails when it cannot write" "$?" 1
+chmod 755 "$APP_DIR/backup"
+
 rm -rf "$T"
 echo "PASS $PASS"; (( FAIL == 0 ))

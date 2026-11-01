@@ -21,7 +21,7 @@ assert_contains "adopt: message" "$out" "Using existing PIA client: PIA UK Strea
 assert_eq "credentials saved" "$(cat "$APP_DIR/credentials")" "$(printf 'p1234567\n@p;w<"$x ,y')"
 assert_eq "credentials private" "$(ls -l "$APP_DIR/credentials" | cut -c1-10)" "-rw-------"
 assert_eq "one cron line" "$(cronlines)" "1"
-assert_contains "cron line" "$(cat "$USER_CRONTAB")" "*/5 * * * * flock -n /dev/shm/firewalla-pia-uk.lock timeout 110 $APP_DIR/bin/firewalla-pia-uk keepalive >/dev/null 2>&1"
+assert_contains "cron line" "$(cat "$USER_CRONTAB")" "*/5 * * * * flock -n /dev/shm/firewalla-pia-uk.lock timeout 110 $APP_DIR/bin/firewalla-pia-uk keepalive >>$APP_DIR/keepalive.log 2>&1"
 assert_contains "crontab installed" "$(cat "$SHIM_CRONTAB")" "firewalla-pia-uk keepalive"
 assert_eq "CLI copied" "$(ls -l "$APP_DIR/bin/firewalla-pia-uk" | cut -c4)" "x"
 assert_contains "dry run shown" "$out" "DRY RUN"
@@ -44,6 +44,21 @@ reset; cp "$FIXTURES"/profile/* "$FIXTURES"/imported/* "$WG_DIR/"; printf 'p1234
 out=$(inst)
 assert_contains "two clients: message" "$out" "error: more than one PIA client: 1D17_1D170 2C3D_2C3D0"
 assert_eq "two clients: no cron line" "$(cronlines)" "0"
+
+reset; cp "$FIXTURES"/profile/* "$WG_DIR/"; printf 'p1234567\n  pw with spaces  \n' > "$PROMPT_IN"
+SHIM_HANDSHAKE_AGE=10 inst >/dev/null
+assert_eq "password keeps its spaces" "$(sed -n 2p "$APP_DIR/credentials")" "  pw with spaces  "
+
+reset; cp "$FIXTURES"/profile/* "$WG_DIR/"; printf '{"addresses":[]}' > "$WG_DIR/1D17_1D170.json"
+printf 'p1234567\npw\n' > "$PROMPT_IN"; out=$(inst)
+assert_contains "unreadable profile: install stops" "$out" "error: cannot read the PIA client profile (1D17_1D170.json)"
+assert_eq "unreadable profile: no cron line" "$(cronlines)" "0"
+
+reset; printf 'p1234567\npw\n' > "$PROMPT_IN"
+out=$(SHIM_IMPORT_FROM="$FIXTURES/imported" SHIM_HANDSHAKE_AGE=100000 inst)
+assert_contains "setup without handshake: explained" "$out" "The client exists, so the installation continues. The keepalive will keep trying to connect it."
+assert_contains "setup without handshake: rc 0" "$out" "rc=0"
+assert_eq "setup without handshake: cron line" "$(cronlines)" "1"
 
 reset; printf 'p1234567\npw\n' > "$PROMPT_IN"
 out=$(SHIM_IMPORT_FROM="$FIXTURES/imported" SHIM_HANDSHAKE_AGE=10 inst)

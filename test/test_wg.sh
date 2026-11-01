@@ -13,6 +13,7 @@ assert_eq "empty = never" "$(handshake_age "")" 999999999
 
 interface_exists vpn_X; assert_eq "interface present" "$?" 0
 SHIM_IFACE_MISSING=1 interface_exists vpn_X; assert_eq "interface missing" "$?" 1
+SHIM_WG_BROKEN=1 interface_exists vpn_X; assert_eq "interface check does not depend on sudo wg" "$?" 0
 assert_eq "client pubkey" "$(client_pubkey vpn_X)" "CLIENTPUB="
 
 : > "$SHIM_LOG"

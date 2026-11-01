@@ -2,6 +2,7 @@
 # Test stand-in for wg. Its answers come from SHIM_* environment variables;
 # after a `wg set` it reports a fresh handshake (marker file in $SHIM_STATE).
 if [[ -n ${SHIM_LOG:-} ]]; then echo "wg $*" >> "$SHIM_LOG"; fi
+if [[ ${SHIM_WG_BROKEN:-0} == 1 ]]; then echo "wg: broken (test)" >&2; exit 1; fi
 case ${1:-} in
   show)
     if [[ ${SHIM_IFACE_MISSING:-0} == 1 ]]; then
@@ -19,7 +20,7 @@ case ${1:-} in
       *) echo "interface: $2" ;;
     esac ;;
   set)
-    if [[ -n ${SHIM_STATE:-} ]]; then touch "$SHIM_STATE/fresh"; fi
+    if [[ -n ${SHIM_STATE:-} && ${SHIM_NO_FRESH:-0} != 1 ]]; then touch "$SHIM_STATE/fresh"; fi
     exit "${SHIM_WG_SET_RC:-0}" ;;
   genkey) echo "PRIVTEST=" ;;
   pubkey) printf 'PUBOF:%s\n' "$(cat)" ;;

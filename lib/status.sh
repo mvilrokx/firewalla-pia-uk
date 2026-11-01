@@ -32,6 +32,7 @@ cmd_status() {
     row client "more than one PIA client: $(find_profiles | paste -sd ' ' -) — remove the extra ones in the Firewalla app"
     return 1
   fi
+  if (( rc != 0 )); then row client "cannot read the PIA client profile ($(find_profiles).json)"; return 1; fi
   read -r id ep _server_pub addr <<< "$profile"
   iface="vpn_$id"
 

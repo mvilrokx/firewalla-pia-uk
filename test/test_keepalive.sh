@@ -68,6 +68,30 @@ assert_contains "repair: live swap" "$(cat "$SHIM_LOG")" "$(printf '%s\n' \
 assert_contains "repair: files patched" "$(cat "$WG_DIR/1D17_1D170.json")" '"endpoint":"85.203.46.72:1337"'
 assert_not_contains "repair: password not logged" "$(logtext)" "secret pw"
 
+reset; out=$(SHIM_HANDSHAKE_AGE=100000 SHIM_NO_FRESH=1 run)
+assert_eq "no handshake after repair: rc 1" "$out" "rc=1"
+assert_contains "no handshake after repair: logged" "$(logtext)" "FAIL(1): registered on 85.203.46.72 (Server-10870-2a), address 10.186.0.136, but no handshake within 30 s"
+assert_not_contains "no handshake after repair: not 'repaired'" "$(logtext)" "repaired:"
+assert_contains "no handshake after repair: files patched" "$(cat "$WG_DIR/1D17_1D170.json")" '"endpoint":"85.203.46.72:1337"'
+
+reset; chmod 444 "$WG_DIR/1D17_1D170.settings"; out=$(SHIM_HANDSHAKE_AGE=100000 run)
+assert_eq "read-only profile: rc 1" "$out" "rc=1"
+assert_contains "read-only profile: logged" "$(logtext)" "FAIL(1): cannot write the profile files"
+assert_not_contains "read-only profile: no live change" "$(cat "$SHIM_LOG")" "wg set"
+chmod 644 "$WG_DIR/1D17_1D170.settings"
+
+reset; printf '{"addresses":[]}' > "$WG_DIR/1D17_1D170.json"; out=$(SHIM_HANDSHAKE_AGE=100000 run)
+assert_eq "unreadable profile: rc 1" "$out" "rc=1"
+assert_contains "unreadable profile: logged" "$(logtext)" "cannot read the PIA client profile (1D17_1D170.json)"
+
+reset; out=$(SHIM_WG_BROKEN=1 run)
+assert_eq "broken wg: rc 1" "$out" "rc=1"
+assert_contains "broken wg: logged" "$(logtext)" "FAIL(1): cannot read the client public key from vpn_1D17_1D170"
+
+reset; printf 'fail_count=2\nnext_attempt=%s\n' $(( $(date +%s) + 20000 )) > "$APP_DIR/state"
+SHIM_HANDSHAKE_AGE=10 run >/dev/null
+assert_eq "fresh handshake clears the back-off" "$(sort "$APP_DIR/state" | paste -sd ' ' -)" "fail_count=0 next_attempt=0"
+
 reset; out=$(run --bogus 2>/dev/null); assert_eq "unknown flag: rc 64" "$out" "rc=64"
 out=$("$BASH" "$CLI" 2>/dev/null; echo "rc=$?"); assert_eq "no command: rc 64" "$out" "rc=64"
 

@@ -43,5 +43,9 @@ rm -f "$WG_DIR"/*; out=$(st)
 assert_contains "no client" "$out" "client:      none — run install.sh"
 assert_contains "no client: rc 1" "$out" "rc=1"
 
+cp "$FIXTURES"/profile/* "$WG_DIR/"; printf '{"addresses":[]}' > "$WG_DIR/1D17_1D170.json"; out=$(st)
+assert_contains "unreadable profile" "$out" "client:      cannot read the PIA client profile (1D17_1D170.json)"
+assert_contains "unreadable profile: rc 1" "$out" "rc=1"
+
 rm -rf "$T"
 echo "PASS $PASS"; (( FAIL == 0 ))

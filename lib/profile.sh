@@ -12,7 +12,7 @@ find_profiles() {
 }
 
 # find_profile → "<id> <endpoint-ip> <server-pub> <address>" of the one PIA client.
-# Exit 1: none. Exit 2: more than one.
+# Exit 1: none. Exit 2: more than one. Exit 3: its .json cannot be read.
 find_profile() {
   local ids
   ids=$(find_profiles)
@@ -21,10 +21,13 @@ find_profile() {
   python3 - "$WG_DIR/$ids.json" "$ids" <<'PY'
 import json, sys
 path, pid = sys.argv[1:3]
-with open(path) as f:
-    j = json.load(f)
-peer = j["peers"][0]
-print(pid, peer["endpoint"].rsplit(":", 1)[0], peer["publicKey"], j["addresses"][0].split("/")[0])
+try:
+    with open(path) as f:
+        j = json.load(f)
+    peer = j["peers"][0]
+    print(pid, peer["endpoint"].rsplit(":", 1)[0], peer["publicKey"], j["addresses"][0].split("/")[0])
+except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+    sys.exit(3)
 PY
 }
 
@@ -54,8 +57,7 @@ profile_pubkey() {
 backup_profile() {
   local dir backups excess i
   dir="$APP_DIR/backup/$(date +%Y%m%d_%H%M%S)"
-  mkdir -p "$dir"
-  cp "$WG_DIR/$1.conf" "$WG_DIR/$1.json" "$WG_DIR/$1.settings" "$dir/"
+  mkdir -p "$dir" && cp "$WG_DIR/$1.conf" "$WG_DIR/$1.json" "$WG_DIR/$1.settings" "$dir/" || return 1
   backups=("$APP_DIR"/backup/*/)
   excess=$(( ${#backups[@]} - 10 ))
   for (( i = 0; i < excess; i++ )); do rm -rf "${backups[$i]}"; done
@@ -65,33 +67,38 @@ backup_profile() {
 # patch_profile <id> <endpoint-ip> <server-pub> <address>
 # Changes only the server key, endpoint, and address, in the same shape that
 # Firewalla writes (one-line JSON, no trailing newline), so the app shows the
-# new values and Firewalla's own restart reads them.
+# new values and Firewalla's own restart reads them. All three files change, or
+# none: files that disagree would send the client back to the old server at the
+# next Firewalla restart.
 patch_profile() {
   python3 - "$WG_DIR" "$@" <<'PY'
-import json, re, sys
+import json, os, re, sys
 d, pid, ip, pub, addr = sys.argv[1:6]
+conf, js, settings = (f"{d}/{pid}.{ext}" for ext in ("conf", "json", "settings"))
 
-conf = f"{d}/{pid}.conf"
+for path in (conf, js, settings):
+    if not os.access(path, os.W_OK):
+        sys.exit(f"cannot write {path}")
+
 with open(conf) as f:
     text = f.read()
 text = re.sub(r"^PublicKey = .*$", f"PublicKey = {pub}", text, flags=re.M)
 text = re.sub(r"^Endpoint = .*$", f"Endpoint = {ip}:1337", text, flags=re.M)
+
+with open(js, encoding="utf-8") as f:
+    j = json.load(f)
+j["addresses"] = [f"{addr}/32"]
+j["peers"][0]["publicKey"] = pub
+j["peers"][0]["endpoint"] = f"{ip}:1337"
+
+with open(settings, encoding="utf-8") as f:
+    s = json.load(f)
+s["serverDDNS"] = ip
+
 with open(conf, "w") as f:
     f.write(text)
-
-def rewrite(path, change):
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-    change(data)
+for path, data in ((js, j), (settings, s)):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
-
-def change_json(j):
-    j["addresses"] = [f"{addr}/32"]
-    j["peers"][0]["publicKey"] = pub
-    j["peers"][0]["endpoint"] = f"{ip}:1337"
-
-rewrite(f"{d}/{pid}.json", change_json)
-rewrite(f"{d}/{pid}.settings", lambda s: s.update(serverDDNS=ip))
 PY
 }

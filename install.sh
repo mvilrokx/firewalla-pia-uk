@@ -27,7 +27,8 @@ if [[ -f $CREDS_FILE ]]; then
   echo "Using the saved PIA login."
 else
   user="" pass=""
-  { read -r -p "PIA username: " user; read -r -s -p "PIA password: " pass; } < "$PROMPT_IN"
+  # IFS= keeps spaces at the start and end of the password.
+  { IFS= read -r -p "PIA username: " user; IFS= read -r -s -p "PIA password: " pass; } < "$PROMPT_IN"
   echo
   [[ -n $user && -n $pass ]] || die "the PIA username and password must not be empty"
   (umask 077; printf '%s\n%s\n' "$user" "$pass" > "$CREDS_FILE")
@@ -37,14 +38,22 @@ fi
 
 ids=$(find_profiles)
 case $(printf '%s' "$ids" | grep -c .) in
-  0) "$APP_DIR/bin/firewalla-pia-uk" setup || exit 1 ;;
-  1) echo "Using existing PIA client: $(profile_name "$ids") ($ids)" ;;
+  0)
+    if ! "$APP_DIR/bin/firewalla-pia-uk" setup; then
+      # A client that exists but has no handshake yet is what the keepalive
+      # repairs, so it must still be installed.
+      [[ $(find_profiles | grep -c .) == 1 ]] || exit 1
+      echo "The client exists, so the installation continues. The keepalive will keep trying to connect it."
+    fi ;;
+  1)
+    find_profile > /dev/null || die "cannot read the PIA client profile ($ids.json)"
+    echo "Using existing PIA client: $(profile_name "$ids") ($ids)" ;;
   *) die "more than one PIA client: $(echo "$ids" | paste -sd ' ' -) — remove the extra ones in the Firewalla app, then run install.sh again" ;;
 esac
 
 # Firewalla adds user_crontab to pi's crontab at every boot, so the line
-# survives reboots and firmware updates.
-line="*/5 * * * * flock -n /dev/shm/firewalla-pia-uk.lock timeout 110 $APP_DIR/bin/firewalla-pia-uk keepalive >/dev/null 2>&1"
+# survives reboots and firmware updates. Errors go to the log, not to /dev/null.
+line="*/5 * * * * flock -n /dev/shm/firewalla-pia-uk.lock timeout 110 $APP_DIR/bin/firewalla-pia-uk keepalive >>$APP_DIR/keepalive.log 2>&1"
 touch "$USER_CRONTAB"
 if [[ -s $USER_CRONTAB && -n $(tail -c 1 "$USER_CRONTAB") ]]; then echo >> "$USER_CRONTAB"; fi
 grep -q 'firewalla-pia-uk keepalive' "$USER_CRONTAB" || echo "$line" >> "$USER_CRONTAB"

@@ -18,6 +18,8 @@ assert_eq "delay 2" "$(next_delay 2)" 1800
 assert_eq "delay 5" "$(next_delay 5)" 14400
 assert_eq "delay capped" "$(next_delay 6)" 21600
 assert_eq "delay stays capped" "$(next_delay 12)" 21600
+assert_eq "delay does not overflow at 55" "$(next_delay 55)" 21600
+assert_eq "delay does not overflow at 100" "$(next_delay 100)" 21600
 
 log "hello world"
 assert_contains "log line format" "$(cat "$LOG_FILE")" " hello world"

@@ -50,7 +50,8 @@ state_set() {
 # hammered, and a dead account or region does not heal quickly.
 next_delay() {
   local n=$1 d=900
-  while (( n > 1 )); do d=$(( d * 2 )); n=$(( n - 1 )); done
+  # Stop doubling at the cap: after ~55 doublings the number would overflow.
+  while (( n > 1 && d < 21600 )); do d=$(( d * 2 )); n=$(( n - 1 )); done
   (( d > 21600 )) && d=21600
   echo "$d"
 }

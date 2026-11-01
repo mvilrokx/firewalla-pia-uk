@@ -40,6 +40,10 @@ cmd_keepalive() {
     log "more than one PIA client: $(find_profiles | paste -sd ' ' -) — remove the extra ones in the Firewalla app"
     exit 1
   fi
+  if (( rc != 0 )); then
+    log "cannot read the PIA client profile ($(find_profiles).json)"
+    exit 1
+  fi
   read -r id ep server_pub addr <<< "$profile"
   if [[ $(state_get no_client) == 1 ]]; then state_set no_client 0; fi
 
@@ -50,7 +54,11 @@ cmd_keepalive() {
   local age next
   age=$(handshake_age "$(sudo wg show "$iface" latest-handshakes 2>/dev/null)")
   if (( age < STALE_SECS && force == 0 )); then
-    if [[ $(state_get fail_count) =~ ^[1-9] ]]; then state_set fail_count 0; fi
+    # A working tunnel clears the back-off, so the next outage is repaired at once.
+    if [[ $(state_get fail_count) =~ ^[1-9] || $(state_get next_attempt) =~ ^[1-9] ]]; then
+      state_set fail_count 0
+      state_set next_attempt 0
+    fi
     exit 0
   fi
   next=$(state_get next_attempt)
@@ -88,13 +96,16 @@ cmd_keepalive() {
   parsed=$(parse_addkey "$body") || fail "addKey failed: $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
   read -r new_addr new_pub _dns <<< "$parsed"
 
-  local backup handshake="no handshake within 30 s"
-  backup=$(backup_profile "$id")
-  patch_profile "$id" "$server_ip" "$new_pub" "$new_addr"
+  local backup
+  backup=$(backup_profile "$id") || fail "cannot back up the profile files"
+  patch_profile "$id" "$server_ip" "$new_pub" "$new_addr" || fail "cannot write the profile files"
   apply_live "$iface" "$server_pub" "$new_pub" "$server_ip" "$addr" "$new_addr" \
     || log "live apply failed — Firewalla's restart will read the patched files"
-  if wait_handshake "$iface"; then handshake="handshake OK"; fi
-  log "repaired: now on $server_ip ($server_cn), address $new_addr — $handshake (backup: $backup)"
+  # Without a handshake the repair did not work: back off instead of
+  # registering again (and making a new backup) every 5 minutes.
+  wait_handshake "$iface" \
+    || fail "registered on $server_ip ($server_cn), address $new_addr, but no handshake within 30 s (backup: $backup)"
+  log "repaired: now on $server_ip ($server_cn), address $new_addr — handshake OK (backup: $backup)"
   state_set fail_count 0
   state_set next_attempt 0
 }

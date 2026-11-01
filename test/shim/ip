@@ -1,4 +1,9 @@
 #!/bin/bash
-# Test stand-in for ip: records the call.
+# Test stand-in for ip: records the call. `ip link show` fails like a missing
+# interface when SHIM_IFACE_MISSING=1.
 if [[ -n ${SHIM_LOG:-} ]]; then echo "ip $*" >> "$SHIM_LOG"; fi
+if [[ "${1:-} ${2:-}" == "link show" && ${SHIM_IFACE_MISSING:-0} == 1 ]]; then
+  echo "Device \"${3:-}\" does not exist." >&2
+  exit 1
+fi
 exit 0
