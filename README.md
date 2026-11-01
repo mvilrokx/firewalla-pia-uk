@@ -31,8 +31,8 @@ Connect to the box with SSH as `pi`, then:
 
 ```bash
 cd /tmp
-curl -fsSL -o firewalla-pia-uk.tar.gz https://github.com/mvilrokx/firewalla-pia-uk/archive/refs/tags/v0.1.1.tar.gz
-tar xzf firewalla-pia-uk.tar.gz && cd firewalla-pia-uk-0.1.1
+curl -fsSL -o firewalla-pia-uk.tar.gz https://github.com/mvilrokx/firewalla-pia-uk/archive/refs/tags/v0.1.2.tar.gz
+tar xzf firewalla-pia-uk.tar.gz && cd firewalla-pia-uk-0.1.2
 less install.sh   # read it first
 ./install.sh
 ```
