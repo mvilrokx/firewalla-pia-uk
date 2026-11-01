@@ -1,0 +1,25 @@
+#!/bin/bash
+# firewalla-pia-uk — keeps a Firewalla's PIA UK WireGuard client working for BBC iPlayer.
+#
+#   firewalla-pia-uk keepalive [--dry-run] [--force]   cron runs this every 5 minutes
+#
+# --dry-run  decide and log, but stop before registering the key with PIA
+# --force    act as if the handshake were old, and ignore the back-off
+# PIA_EP_OVERRIDE=<ip> pretends the client's endpoint is <ip> (tests the retired-server path).
+set -uo pipefail
+
+LIB=$(cd "$(dirname "$0")/../lib" && pwd)
+for part in common wg pia profile keepalive; do
+  source "$LIB/$part.sh"
+done
+
+usage() {
+  echo "usage: firewalla-pia-uk keepalive [--dry-run] [--force]" >&2
+  exit 64
+}
+
+mkdir -p "$APP_DIR"
+case ${1:-} in
+  keepalive) shift; cmd_keepalive "$@" ;;
+  *) usage ;;
+esac
