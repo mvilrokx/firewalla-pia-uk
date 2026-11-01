@@ -1,4 +1,7 @@
 #!/bin/bash
-# Test stand-in for flock: the lock is free unless SHIM_FLOCK_BUSY=1.
+# Test stand-in for flock <options> <fd>. Fails like util-linux flock when the
+# fd is not open; else the lock is free unless SHIM_FLOCK_BUSY=1.
+fd=${!#}
+if ! { : >&"$fd"; } 2>/dev/null; then echo "flock: $fd: Bad file descriptor" >&2; exit 65; fi
 if [[ ${SHIM_FLOCK_BUSY:-0} == 1 ]]; then exit 1; fi
 exit 0

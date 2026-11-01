@@ -16,6 +16,20 @@ serverlist_resolve "$FIXTURES/serverlist_broken.json" 85.203.46.180 uk_2 >/dev/n
 assert_eq "region_server" "$(region_server "$F" uk_2)" "85.203.46.72 Server-10870-2a"
 region_server "$FIXTURES/serverlist_broken.json" uk_2 >/dev/null 2>&1; assert_eq "region_server HTML → 3" "$?" 3
 
+assert_eq "avoided endpoint → the region's next server" "$(serverlist_resolve "$F" 85.203.46.72 uk_2 85.203.46.72)" "AVOIDED 85.203.46.73 Server-10871-2a"
+assert_eq "retired, first server avoided → the next one" "$(serverlist_resolve "$F" 85.203.46.180 uk_2 85.203.46.72)" "RETIRED 85.203.46.73 Server-10871-2a"
+assert_eq "avoided, no other server → the same one" "$(serverlist_resolve "$F" 212.102.53.10 uk_london 212.102.53.10)" "AVOIDED 212.102.53.10 london401"
+assert_eq "avoid another server → endpoint still current" "$(serverlist_resolve "$F" 85.203.46.72 uk_2 85.203.46.73)" "CURRENT 85.203.46.72 Server-10870-2a"
+
+{ python3 -c 'import json, sys; print(json.dumps(json.loads(open(sys.argv[1]).readline()), indent=2))' "$F"; echo 'c2lnbmF0dXJl'; } > "$T/pretty.json"
+assert_eq "list over more than one line" "$(serverlist_resolve "$T/pretty.json" 85.203.46.180 uk_2)" "RETIRED 85.203.46.72 Server-10870-2a"
+printf '%s\n' '{"regions":[{"id":"uk_2","servers":{"wg":[{"ip":null,"cn":"a"},{"ip":"1.2.3.4","cn":"b c"},"x",{"ip":"85.203.46.73","cn":"Server-10871-2a"}]}}]}' > "$T/odd.json"
+assert_eq "bad server entries are skipped" "$(serverlist_resolve "$T/odd.json" 9.9.9.9 uk_2)" "RETIRED 85.203.46.73 Server-10871-2a"
+printf '%s\n' '{"regions":[{"id":"uk_2","servers":{"wg":[{"ip":"1.2.3.4","cn":"a/b"}]}}]}' > "$T/badcn.json"
+serverlist_resolve "$T/badcn.json" 9.9.9.9 uk_2 >/dev/null 2>&1; assert_eq "no valid server in the region → 2" "$?" 2
+printf '%s\n' '{"regions":"none"}' > "$T/shape.json"
+out=$(serverlist_resolve "$T/shape.json" 9.9.9.9 uk_2 2>&1); assert_eq "wrong shape → 3, no traceback" "$?|$out" "3|"
+
 PIA_SERVERLIST_URL="file://$F" fetch_serverlist "$T/sl"
 assert_eq "fetch_serverlist copies the list" "$(head -c 10 "$T/sl")" '{"groups":'
 
@@ -28,8 +42,15 @@ assert_contains "login read from stdin" "$(cat "$SHIM_LOG")" "$(printf 'curl-arg
 assert_not_contains "password not in curl's arguments" "$(grep '^curl-arg' "$SHIM_LOG")" 'p;w<'
 assert_contains "username in curl's config" "$(cat "$SHIM_LOG")" 'curl-config form-string = "username=p1234567"'
 assert_contains "password in curl's config, escaped" "$(cat "$SHIM_LOG")" 'curl-config form-string = "password=@p;w<\"$x ,y\\z"'
-SHIM_TOKEN_BODY='{}' get_token >/dev/null; assert_eq "no token → 1" "$?" 1
-SHIM_TOKEN_BODY='<html>' get_token >/dev/null 2>&1; assert_eq "non-JSON token answer → 1" "$?" 1
+assert_contains "token: asks curl for the HTTP status" "$(cat "$SHIM_LOG")" "$(printf 'curl-arg -w\ncurl-arg \\n%%{http_code}')"
+SHIM_HTTP_CODE=401 SHIM_TOKEN_BODY='HTTP Token: Access denied.' get_token >/dev/null; assert_eq "wrong login (401) → 1" "$?" 1
+SHIM_HTTP_CODE=403 SHIM_TOKEN_BODY='{}' get_token >/dev/null; assert_eq "403 → 1" "$?" 1
+out=$(SHIM_HTTP_CODE=503 SHIM_TOKEN_BODY='<html>503 Service Unavailable</html>' get_token); rc=$?
+assert_eq "outage (503) → 3 and the status" "$rc|$out" "3|503"
+out=$(SHIM_HTTP_CODE=429 SHIM_TOKEN_BODY='{"message":"rate limited"}' get_token); rc=$?
+assert_eq "rate limit (429) → 3 and the status" "$rc|$out" "3|429"
+out=$(SHIM_TOKEN_BODY='{}' get_token); rc=$?
+assert_eq "200 without a token → 3" "$rc|$out" "3|200"
 SHIM_CURL_FAIL_URL=token get_token >/dev/null 2>&1; assert_eq "no answer from PIA → 2" "$?" 2
 
 : > "$SHIM_LOG"

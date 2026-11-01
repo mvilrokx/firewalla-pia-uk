@@ -9,23 +9,55 @@ for part in common pia profile; do
   source "$SRC/lib/$part.sh"
 done
 PROMPT_IN=${PROMPT_IN:-/dev/tty}
-REQUIRED_TOOLS=${REQUIRED_TOOLS:-bash curl python3 wg flock timeout openssl qrencode ip sudo}
+REQUIRED_TOOLS=${REQUIRED_TOOLS:-bash curl python3 wg flock timeout qrencode ip sudo}
 
+refuse_root install.sh
 for tool in $REQUIRED_TOOLS; do
   command -v "$tool" > /dev/null || die "missing tool: $tool"
 done
 
-# Refuse a box we cannot work with before anything is copied or asked.
+# All answers come from one open PROMPT_IN, so that a test can give them as the
+# lines of one file. It is opened only when there is a question.
+answers_open=0
+open_answers() {
+  if (( ! answers_open )); then
+    exec 3< "$PROMPT_IN" || die "cannot read the answers from $PROMPT_IN"
+    answers_open=1
+  fi
+}
+
+# A server on port 1337 does not make a client PIA's, and some users have more
+# than one PIA client: the user says which one the keepalive may change. This
+# happens before anything is copied, so a wrong answer changes nothing.
+chosen="" answer=""
 ids=$(find_profiles)
-count=$(printf '%s' "$ids" | grep -c .)
-if (( count > 1 )); then
-  die "more than one PIA client: $(echo "$ids" | paste -sd ' ' -) — remove the extra ones in the Firewalla app, then run install.sh again"
-fi
-if (( count == 1 )); then
-  find_profile > /dev/null || die "cannot read the PIA client profile ($ids.json)"
+if [[ -n $ids ]]; then
+  echo "WireGuard clients on port 1337:"
+  n=0 default=""
+  for id in $ids; do
+    n=$(( n + 1 ))
+    if [[ $id == "$(client_id)" ]]; then
+      default=$n
+      echo "  $n) $(profile_name "$id") ($id) — in use"
+    else
+      echo "  $n) $(profile_name "$id") ($id)"
+    fi
+  done
+  open_answers
+  IFS= read -r -p "Which one is your PIA UK client? Type its number, or 0 to make a new one${default:+ [$default]}: " answer <&3
+  answer=${answer:-$default}
+  if ! [[ $answer =~ ^(0|[1-9][0-9]*)$ ]] || (( answer > n )); then
+    die "type a number from 0 to $n, then run install.sh again"
+  fi
+  if (( answer > 0 )); then
+    chosen=$(echo "$ids" | sed -n "${answer}p")
+    read_profile "$chosen" > /dev/null || die "cannot read the PIA client profile ($chosen.json)"
+  fi
 fi
 
 mkdir -p "$APP_DIR"
+# A clean copy: a file that this release no longer has must not stay behind.
+rm -rf "${APP_DIR:?}/bin" "${APP_DIR:?}/lib" "${APP_DIR:?}/share"
 cp -R "$SRC/bin" "$SRC/lib" "$SRC/share" "$APP_DIR/"
 cp "$SRC/uninstall.sh" "$APP_DIR/"
 chmod 755 "$APP_DIR/bin/firewalla-pia-uk" "$APP_DIR/uninstall.sh"
@@ -41,44 +73,49 @@ else
   new_creds="$CREDS_FILE.new"
   rm -f "$new_creds"
   user="" pass=""
+  open_answers
   # IFS= keeps spaces at the start and end of the password.
-  { IFS= read -r -p "PIA username: " user; IFS= read -r -s -p "PIA password: " pass; } < "$PROMPT_IN"
+  { IFS= read -r -p "PIA username: " user; IFS= read -r -s -p "PIA password: " pass; } <&3
   echo
   [[ -n $user && -n $pass ]] || die "the PIA username and password must not be empty"
   (umask 077; printf '%s\n%s\n' "$user" "$pass" > "$new_creds")
-  CREDS_FILE=$new_creds get_token > /dev/null; rc=$?
+  status=$(CREDS_FILE=$new_creds get_token); rc=$?
   case $rc in
     0) mv "$new_creds" "$CREDS_FILE" ;;
     1) rm -f "$new_creds"; die "PIA rejected the login. Run install.sh again." ;;
-    *) rm -f "$new_creds"; die "cannot reach PIA to check the login. Check the Internet connection, then run install.sh again." ;;
+    2) rm -f "$new_creds"; die "cannot reach PIA to check the login. Check the Internet connection, then run install.sh again." ;;
+    *) rm -f "$new_creds"; die "PIA's login server gave no usable answer (HTTP $status). Try again later: run install.sh again." ;;
   esac
   echo "PIA login OK."
 fi
 
-if (( count == 0 )); then
+if [[ -n $chosen ]]; then
+  echo "$chosen" > "$CLIENT_FILE"
+  # Left by a setup that timed out: the imported client has the private key now.
+  rm -f "$APP_DIR/pia-uk.conf"
+  echo "Using PIA client: $(profile_name "$chosen") ($chosen)"
+else
+  rm -f "$CLIENT_FILE"
   if ! "$APP_DIR/bin/firewalla-pia-uk" setup; then
     # A client that exists but has no handshake yet is what the keepalive
     # repairs, so it must still be installed.
-    [[ $(find_profiles | grep -c .) == 1 ]] || exit 1
+    [[ -s $CLIENT_FILE ]] || exit 1
     echo "The client exists, so the installation continues. The keepalive will keep trying to connect it."
   fi
-else
-  echo "Using existing PIA client: $(profile_name "$ids") ($ids)"
 fi
 
 # Firewalla adds user_crontab to pi's crontab at every boot, so the line
-# survives reboots and firmware updates. An older line of ours is replaced, so
-# a new release can change it. Errors go to the log, not to /dev/null.
-line="*/5 * * * * timeout 240 $APP_DIR/bin/firewalla-pia-uk keepalive >>$APP_DIR/keepalive.log 2>&1"
+# survives reboots and firmware updates. The line of an older release is
+# replaced, so a new release can change it. Errors go to the log, not to /dev/null.
 touch "$USER_CRONTAB"
 tmp=$(mktemp)
-grep -v 'firewalla-pia-uk keepalive' "$USER_CRONTAB" > "$tmp"
+without_our_cron_lines "$USER_CRONTAB" > "$tmp"
 if [[ -s $tmp && -n $(tail -c 1 "$tmp") ]]; then echo >> "$tmp"; fi
-echo "$line" >> "$tmp"
+echo "$CRON_LINE" >> "$tmp"
 cat "$tmp" > "$USER_CRONTAB"   # cat, not mv: keeps the file's owner and mode
 rm -f "$tmp"
 bash "$FW_UPDATE_CRONTAB"
-crontab -l | grep -q 'firewalla-pia-uk keepalive' || die "the cron line did not install"
+crontab -l | grep -qxF "$CRON_LINE" || die "the cron line did not install"
 echo "The keepalive runs every 5 minutes."
 
 echo "Test run (changes nothing):"

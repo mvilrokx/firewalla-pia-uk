@@ -2,13 +2,26 @@
 # The status command: what the keepalive sees, plus a BBC check through the tunnel.
 # There are no notifications, so this is how the user finds out what happened.
 
-# bbc_classify <mediaselector body> → OK | blocked | unknown
+# bbc_classify <mediaselector body> → OK (BBC offers the stream), blocked
+# (geolocation), result:<BBC's reason> for another refusal, or unknown.
 bbc_classify() {
-  case $1 in
-    *'"result":"geolocation"'*) echo blocked ;;
-    *'"media"'*) echo OK ;;
-    *) echo unknown ;;
-  esac
+  python3 -c '
+import json, re, sys
+try:
+    r = json.loads(sys.stdin.read())
+except ValueError:
+    r = None
+if not isinstance(r, dict):
+    print("unknown")
+elif isinstance(r.get("media"), list) and r["media"]:
+    print("OK")
+elif r.get("result") == "geolocation":
+    print("blocked")
+elif isinstance(r.get("result"), str):
+    print("result:" + re.sub(r"[^A-Za-z0-9_.-]", "?", r["result"])[:40])
+else:
+    print("unknown")
+' <<< "$1"
 }
 
 # bbc_verdict <iface> — asks BBC's media selector through the tunnel itself.
@@ -25,14 +38,14 @@ fmt_time() {
 row() { printf '%-13s%s\n' "$1:" "$2"; }
 
 cmd_status() {
-  local profile rc id ep _server_pub addr iface age last fails healthy=1 up=1
+  local profile rc id ep _server_pub addr iface age last fails next verdict healthy=1 up=1
   profile=$(find_profile); rc=$?
-  if (( rc == 1 )); then row client "none — run install.sh"; return 1; fi
-  if (( rc == 2 )); then
-    row client "more than one PIA client: $(find_profiles | paste -sd ' ' -) — remove the extra ones in the Firewalla app"
-    return 1
-  fi
-  if (( rc != 0 )); then row client "cannot read the PIA client profile ($(find_profiles).json)"; return 1; fi
+  case $rc in
+    0) ;;
+    1) row client "none — run install.sh"; return 1 ;;
+    2) row client "$(client_id) is gone (deleted in the app?) — run install.sh again"; return 1 ;;
+    *) row client "cannot read the PIA client profile ($(client_id).json)"; return 1 ;;
+  esac
   read -r id ep _server_pub addr <<< "$profile"
   iface="vpn_$id"
 
@@ -50,15 +63,19 @@ cmd_status() {
 
   last=$(grep 'repaired:' "$LOG_FILE" 2>/dev/null | tail -n 1)
   row "last repair" "${last:-none}"
-  fails=$(state_get fail_count)
-  if [[ $fails =~ ^[1-9] ]]; then
-    row failures "$fails (next attempt $(fmt_time "$(state_get next_attempt)"))"
+  fails=$(state_num fail_count); next=$(state_num next_attempt)
+  if (( fails > 0 && next > 0 )); then
+    row failures "$fails (next attempt $(fmt_time "$next"))"
+  elif (( fails > 0 )); then
+    row failures "$fails"
   fi
 
   if (( up )); then
-    case $(bbc_verdict "$iface") in
+    verdict=$(bbc_verdict "$iface")
+    case $verdict in
       OK) row BBC OK ;;
       blocked) row BBC "blocked (geolocation)"; healthy=0 ;;
+      result:*) row BBC "refused (${verdict#result:})"; healthy=0 ;;
       *) row BBC "unknown (no answer)"; healthy=0 ;;
     esac
   fi

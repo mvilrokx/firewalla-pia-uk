@@ -4,28 +4,45 @@
 
 fetch_serverlist() { curl -sf --max-time 20 "$PIA_SERVERLIST_URL" -o "$1"; }
 
-# serverlist_resolve <file> <endpoint-ip> <region>
+# serverlist_resolve <file> <endpoint-ip> <region> [<avoid-ip>]
 # "CURRENT <ip> <cn>" while the endpoint is still a PIA WireGuard server, else
-# "RETIRED <ip> <cn>" naming the region's first one. Exit 2: the region has no
-# WireGuard servers. Exit 3: the file is not PIA's JSON.
+# "RETIRED <ip> <cn>" naming the region's first one. <avoid-ip> did not answer
+# last time: when it is the endpoint, "AVOIDED <ip> <cn>" names the region's
+# first other server. Exit 2: the region has no WireGuard servers. Exit 3: the
+# file is not PIA's JSON.
 serverlist_resolve() {
-  python3 - "$1" "$2" "$3" <<'PY'
-import json, sys
-path, endpoint, region = sys.argv[1:4]
+  python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
+import ipaddress, json, re, sys
+path, endpoint, region, avoid = sys.argv[1:5]
+
+# ip and cn go into curl's arguments: only an IPv4 address and a host name.
+def valid(s):
+    try:
+        ipaddress.IPv4Address(s["ip"])
+    except (TypeError, KeyError, ValueError):
+        return False
+    return (isinstance(s["ip"], str) and isinstance(s.get("cn"), str)
+            and re.fullmatch(r"[A-Za-z0-9.-]+", s["cn"]) is not None)
+
 try:
     with open(path) as f:
-        regions = json.loads(f.readline())["regions"]  # line 1 = JSON, line 2 = signature
-except (ValueError, KeyError, TypeError):
+        # The JSON is followed by a signature.
+        data, _ = json.JSONDecoder().raw_decode(f.read().lstrip())
+    regions = [(r["id"], [s for s in r.get("servers", {}).get("wg", []) if valid(s)])
+               for r in data["regions"]]
+except (ValueError, KeyError, TypeError, AttributeError):
     sys.exit(3)
-for r in regions:
-    for s in r.get("servers", {}).get("wg", []):
-        if s["ip"] == endpoint:
-            print("CURRENT", s["ip"], s["cn"])
-            sys.exit(0)
-for r in regions:
-    if r["id"] == region and r.get("servers", {}).get("wg"):
-        s = r["servers"]["wg"][0]
-        print("RETIRED", s["ip"], s["cn"])
+avoided = avoid != "" and endpoint == avoid
+if not avoided:
+    for _, wg in regions:
+        for s in wg:
+            if s["ip"] == endpoint:
+                print("CURRENT", s["ip"], s["cn"])
+                sys.exit(0)
+for rid, wg in regions:
+    if rid == region and wg:
+        s = ([s for s in wg if s["ip"] != avoid] or wg)[0]
+        print("AVOIDED" if avoided else "RETIRED", s["ip"], s["cn"])
         sys.exit(0)
 sys.exit(2)
 PY
@@ -33,39 +50,31 @@ PY
 
 # region_server <file> <region> → "<ip> <cn>" of the region's first WireGuard server.
 region_server() {
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-path, region = sys.argv[1:3]
-try:
-    with open(path) as f:
-        regions = json.loads(f.readline())["regions"]
-except (ValueError, KeyError, TypeError):
-    sys.exit(3)
-for r in regions:
-    if r["id"] == region and r.get("servers", {}).get("wg"):
-        s = r["servers"]["wg"][0]
-        print(s["ip"], s["cn"])
-        sys.exit(0)
-sys.exit(2)
-PY
+  local out rc
+  out=$(serverlist_resolve "$1" "" "$2"); rc=$?
+  (( rc == 0 )) || return "$rc"
+  echo "${out#* }"
 }
 
 # cfg_quote <value> → the value escaped for a "quoted" string in a curl config.
 cfg_quote() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
-# get_token → PIA's token. Exit 1: PIA answered without a token (a wrong login).
-# Exit 2: no answer (network). The login goes to curl on stdin (-K -), because
-# any local user can read a command line. form-string, not form: with form, a
-# password that starts with @ or < would be read as a file name.
+# get_token → PIA's token. Exit 1: PIA rejected the login (HTTP 401 or 403).
+# Exit 2: no answer (network). Exit 3: any other answer, such as an outage or a
+# rate limit; prints the HTTP status. The login goes to curl on stdin (-K -),
+# because any local user can read a command line. form-string, not form: with
+# form, a password that starts with @ or < would be read as a file name.
 get_token() {
-  local user pass body token
+  local user pass out code token
   user=$(sed -n 1p "$CREDS_FILE")
   pass=$(sed -n 2p "$CREDS_FILE")
-  body=$(printf 'form-string = "username=%s"\nform-string = "password=%s"\n' \
-           "$(cfg_quote "$user")" "$(cfg_quote "$pass")" \
-         | curl -sS --max-time 20 -X POST "$PIA_TOKEN_URL" -K -) || return 2
-  token=$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("token", ""))' <<< "$body" 2>/dev/null)
-  [[ -n $token ]] || return 1
+  out=$(printf 'form-string = "username=%s"\nform-string = "password=%s"\n' \
+          "$(cfg_quote "$user")" "$(cfg_quote "$pass")" \
+        | curl -sS --max-time 20 -X POST "$PIA_TOKEN_URL" -K - -w '\n%{http_code}') || return 2
+  code=${out##*$'\n'}
+  case $code in 401|403) return 1 ;; esac
+  token=$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("token", ""))' <<< "${out%$'\n'*}" 2>/dev/null)
+  if [[ $code != 200 || -z $token ]]; then echo "$code"; return 3; fi
   echo "$token"
 }
 

@@ -2,11 +2,13 @@
 # Test stand-in for curl. Records every argument and, with `-K -`, every config
 # line it reads on stdin. Answers the PIA and BBC calls from fixtures, and passes
 # file:// URLs to the real curl. SHIM_CURL_FAIL_URL=<part of a URL> makes that
-# call fail like a timeout.
-url="" config_on_stdin=0 prev=""
+# call fail like a timeout. With -w '\n%{http_code}' the answer ends with the
+# HTTP status: SHIM_HTTP_CODE, else 200.
+url="" config_on_stdin=0 prev="" write_out=""
 for arg in "$@"; do
   case $arg in http*|file:*) url=$arg ;; esac
   if [[ $prev == -K && $arg == - ]]; then config_on_stdin=1; fi
+  if [[ $prev == -w ]]; then write_out=$arg; fi
   prev=$arg
 done
 if [[ -n ${SHIM_LOG:-} ]]; then
@@ -26,4 +28,5 @@ case $url in
   */addKey*) cat "${SHIM_ADDKEY_FILE:-$FIXTURES/addkey_ok.json}" ;;
   *mediaselector*) cat "${SHIM_BBC_FILE:-$FIXTURES/mediaselector_ok.json}" ;;
 esac
+if [[ $write_out == *http_code* ]]; then printf '\n%s' "${SHIM_HTTP_CODE:-200}"; fi
 exit 0

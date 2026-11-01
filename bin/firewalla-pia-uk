@@ -22,6 +22,7 @@ usage() {
   exit 64
 }
 
+refuse_root firewalla-pia-uk
 mkdir -p "$APP_DIR"
 case ${1:-} in
   keepalive) shift; cmd_keepalive "$@" ;;

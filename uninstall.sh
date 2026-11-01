@@ -7,14 +7,15 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 source "$HERE/lib/common.sh"
 PROMPT_IN=${PROMPT_IN:-/dev/tty}
 
+refuse_root uninstall.sh
 if [[ -f $USER_CRONTAB ]]; then
   tmp=$(mktemp)
-  grep -v 'firewalla-pia-uk keepalive' "$USER_CRONTAB" > "$tmp"
+  without_our_cron_lines "$USER_CRONTAB" > "$tmp"
   cat "$tmp" > "$USER_CRONTAB"   # cat, not mv: keeps the file's owner and mode
   rm -f "$tmp"
   bash "$FW_UPDATE_CRONTAB"
 fi
-if crontab -l | grep -q 'firewalla-pia-uk keepalive'; then
+if crontab -l | grep -qxF -e "$CRON_LINE" -e "$OLD_CRON_LINE"; then
   die "the cron line is still in pi's crontab. Run: bash $FW_UPDATE_CRONTAB"
 fi
 echo "Removed the cron line."

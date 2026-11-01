@@ -25,16 +25,22 @@ assert_eq "apply_live: changed key and address" "$(cat "$SHIM_LOG")" "$(printf '
   'ip addr del 10.1.1.1/32 dev vpn_X')"
 : > "$SHIM_LOG"
 apply_live vpn_X SAME SAME 85.203.46.72 10.1.1.1 10.1.1.1
-assert_eq "apply_live: unchanged → one wg set" "$(cat "$SHIM_LOG")" \
-  "wg set vpn_X peer SAME endpoint 85.203.46.72:1337 allowed-ips 0.0.0.0/0 persistent-keepalive 25"
+assert_eq "apply_live: same key → the peer is added again, for a new handshake" "$(cat "$SHIM_LOG")" "$(printf '%s\n' \
+  'wg set vpn_X peer SAME remove' \
+  'wg set vpn_X peer SAME endpoint 85.203.46.72:1337 allowed-ips 0.0.0.0/0 persistent-keepalive 25')"
 SHIM_WG_SET_RC=1 apply_live vpn_X SAME SAME 1.2.3.4 10.1.1.1 10.1.1.1; assert_eq "apply_live: wg set fails" "$?" 1
 : > "$SHIM_LOG"
 SHIM_IP_ADD_RC=2 apply_live vpn_X OLDPUB NEWPUB 85.203.46.72 10.1.1.1 10.2.2.2; assert_eq "apply_live: ip addr add fails" "$?" 1
 assert_not_contains "apply_live: old address kept when add fails" "$(cat "$SHIM_LOG")" "ip addr del"
+SHIM_IP_DEL_RC=2 apply_live vpn_X OLDPUB NEWPUB 85.203.46.72 10.1.1.1 10.2.2.2
+assert_eq "apply_live: old address already gone is no failure" "$?" 0
 
 rm -f "$SHIM_STATE/fresh"
 SHIM_HANDSHAKE_AGE=10 wait_handshake vpn_X; assert_eq "wait_handshake: fresh" "$?" 0
 SHIM_HANDSHAKE_AGE=100000 wait_handshake vpn_X; assert_eq "wait_handshake: stale" "$?" 1
+SHIM_HANDSHAKE_AGE=10 wait_handshake vpn_X "$(date +%s)"; assert_eq "wait_handshake: fresh, but from before the change" "$?" 1
+since=$(date +%s); SHIM_HANDSHAKE_AGE=100000 apply_live vpn_X OLDPUB NEWPUB 85.203.46.72 10.1.1.1 10.1.1.1
+SHIM_HANDSHAKE_AGE=100000 wait_handshake vpn_X "$since"; assert_eq "wait_handshake: new handshake after the change" "$?" 0
 
 rm -rf "$SHIM_STATE"
 echo "PASS $PASS"; (( FAIL == 0 ))

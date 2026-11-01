@@ -21,10 +21,30 @@ LOG_FILE=${LOG_FILE:-$APP_DIR/keepalive.log}
 CREDS_FILE=${CREDS_FILE:-$APP_DIR/credentials}
 CA_FILE=${CA_FILE:-$APP_DIR/share/ca.rsa.4096.crt}
 LOCK_FILE=${LOCK_FILE:-$APP_DIR/keepalive.lock}
+CLIENT_FILE=${CLIENT_FILE:-$APP_DIR/client}
 
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
 
 die() { echo "error: $*" >&2; exit 1; }
+
+# refuse_root <script name> — the scripts use sudo themselves where they must.
+# Run as root, they would leave files that pi's cron job cannot write, and every
+# later repair would fail.
+refuse_root() { [[ $(id -u) != 0 ]] || die "do not run $1 as root or with sudo: run it as pi"; }
+
+# take_lock <flock option>… — one run at a time: cron's keepalive, a keepalive
+# started by hand, and setup. A lock file that cannot be opened is an error, not
+# "busy": else the keepalive would stop for good without a word.
+take_lock() {
+  exec 9>> "$LOCK_FILE" || die "cannot open the lock file $LOCK_FILE"
+  flock "$@" 9
+}
+
+# The cron line of this release, and the one of v0.1.0. install.sh and
+# uninstall.sh remove only these exact lines, never a line that the user wrote.
+CRON_LINE="*/5 * * * * timeout 240 $APP_DIR/bin/firewalla-pia-uk keepalive >>$APP_DIR/keepalive.log 2>&1"
+OLD_CRON_LINE="*/5 * * * * flock -n /dev/shm/firewalla-pia-uk.lock timeout 110 $APP_DIR/bin/firewalla-pia-uk keepalive >>$APP_DIR/keepalive.log 2>&1"
+without_our_cron_lines() { grep -vxF -e "$CRON_LINE" -e "$OLD_CRON_LINE" "$1"; }
 
 # Cron runs every 5 minutes for months, so the log must not grow without limit.
 # The trim rewrites the same file (cat, not mv): cron has already opened it for
@@ -44,6 +64,13 @@ rotate_log() {
 state_get() {
   [[ -f $STATE_FILE ]] && awk -F= -v k="$1" '$1 == k { print $2 }' "$STATE_FILE"
   true
+}
+
+# state_num <key> → the value when it is a number, else 0: a damaged state file
+# must not stop the failure handling.
+state_num() {
+  local v; v=$(state_get "$1")
+  if [[ $v =~ ^(0|[1-9][0-9]{0,17})$ ]]; then echo "$v"; else echo 0; fi
 }
 
 state_set() {

@@ -50,10 +50,10 @@ wait_for_interface() {
 }
 
 cmd_setup() {
-  local priv pub list server rc server_ip server_cn token body parsed addr server_key dns conf id existing
-  # A second client would stop the keepalive (it refuses two PIA clients).
-  existing=$(find_profiles | paste -sd ' ' -)
-  [[ -z $existing ]] || die "a PIA client already exists ($existing); setup only makes the first one"
+  local priv pub list server rc server_ip server_cn token body parsed addr server_key dns conf id
+  # No keepalive run while the new client is still being imported: it would
+  # register the key again and change the client's address.
+  take_lock -w 300 || die "another firewalla-pia-uk run is busy; try again in a few minutes"
 
   priv=$(wg genkey)
   pub=$(printf '%s' "$priv" | wg pubkey)
@@ -68,7 +68,8 @@ cmd_setup() {
   case $rc in
     0) ;;
     1) die "PIA rejected the saved login" ;;
-    *) die "cannot reach PIA's login server" ;;
+    2) die "cannot reach PIA's login server" ;;
+    *) die "PIA's login server gave no usable answer (HTTP $token). Try again later" ;;
   esac
   body=$(add_key "$server_ip" "$server_cn" "$pub" "$token" 2>&1)
   parsed=$(parse_addkey "$body") \
@@ -80,10 +81,11 @@ cmd_setup() {
   (umask 077; make_conf "$priv" "$addr" "$dns" "$server_key" "$server_ip" > "$conf")
   qrencode -t ansiutf8 < "$conf"
   echo 'In the Firewalla app: VPN Client → add → WireGuard → Scan QR Code. Name it "PIA UK Streaming" and save.'
-  echo "Or use Import Profile with $conf. Waiting for the new client…"
+  echo "Or copy $conf to the phone and use Import Profile. Waiting for the new client…"
 
   id=$(wait_for_import "$pub" "${SETUP_IMPORT_SECS:-900}") \
-    || die "no new client after 15 min. Import $conf, then run install.sh again"
+    || die "no new client after 15 min. To show the QR code again: qrencode -t ansiutf8 < $conf. After the import, run install.sh again"
+  echo "$id" > "$CLIENT_FILE"
   # The client's profile now holds the private key: no other copy is needed.
   rm -f "$conf"
   wait_for_interface "$id" "${SETUP_HINT_SECS:-60}" "${SETUP_IFACE_SECS:-600}" \

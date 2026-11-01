@@ -1,24 +1,37 @@
 #!/bin/bash
 # The Firewalla app keeps each WireGuard client in $WG_DIR/<id>.{conf,json,settings}.
 # The .json is the source of truth: the .conf loses its PrivateKey while the
-# client is turned off. PIA's WireGuard servers are the only ones on port 1337.
+# client is turned off. A server on port 1337 does not make a client PIA's, so
+# install.sh asks the user which client it is and records it in $CLIENT_FILE.
 
-# find_profiles → the ids of all PIA clients, sorted, one per line.
+# find_profiles → the ids of the clients whose server is an IPv4 address on port
+# 1337, as PIA's are, sorted, one per line: the choices that install.sh offers.
 find_profiles() {
   local conf
   for conf in "$WG_DIR"/*.conf; do
-    if [[ -f $conf ]] && grep -q ':1337' "$conf"; then basename "$conf" .conf; fi
+    if [[ -f $conf ]] && grep -Eq '^[[:space:]]*Endpoint[[:space:]]*=[[:space:]]*[0-9]{1,3}(\.[0-9]{1,3}){3}:1337[[:space:]]*$' "$conf"; then
+      basename "$conf" .conf
+    fi
   done | sort
 }
 
-# find_profile → "<id> <endpoint-ip> <server-pub> <address>" of the one PIA client.
-# Exit 1: none. Exit 2: more than one. Exit 3: its .json cannot be read.
+# client_id → the id of the client that the user chose as the PIA client.
+client_id() { cat "$CLIENT_FILE" 2>/dev/null; }
+
+# find_profile → read_profile of the chosen client. Exit 1: none chosen. Exit 2:
+# it is gone (deleted in the app). Exit 3: its .json cannot be read.
 find_profile() {
-  local ids
-  ids=$(find_profiles)
-  [[ -n $ids ]] || return 1
-  (( $(echo "$ids" | wc -l) == 1 )) || return 2
-  python3 - "$WG_DIR/$ids.json" "$ids" <<'PY'
+  local id
+  id=$(client_id)
+  [[ -n $id ]] || return 1
+  [[ -e $WG_DIR/$id.json ]] || return 2
+  read_profile "$id"
+}
+
+# read_profile <id> → "<id> <endpoint-ip> <server-pub> <address>".
+# Exit 3: its .json cannot be read.
+read_profile() {
+  python3 - "$WG_DIR/$1.json" "$1" <<'PY'
 import json, sys
 path, pid = sys.argv[1:3]
 try:
@@ -76,14 +89,17 @@ import json, os, re, sys
 d, pid, ip, pub, addr = sys.argv[1:6]
 conf, js, settings = (f"{d}/{pid}.{ext}" for ext in ("conf", "json", "settings"))
 
-for path in (conf, js, settings):
+# The folder too: each new file is written next to the old one.
+for path in (d, conf, js, settings):
     if not os.access(path, os.W_OK):
         sys.exit(f"cannot write {path}")
 
-with open(conf) as f:
+with open(conf, encoding="utf-8") as f:
     text = f.read()
-text = re.sub(r"^PublicKey = .*$", f"PublicKey = {pub}", text, flags=re.M)
-text = re.sub(r"^Endpoint = .*$", f"Endpoint = {ip}:1337", text, flags=re.M)
+text, keys = re.subn(r"^[ \t]*PublicKey[ \t]*=.*$", f"PublicKey = {pub}", text, flags=re.M)
+text, endpoints = re.subn(r"^[ \t]*Endpoint[ \t]*=.*$", f"Endpoint = {ip}:1337", text, flags=re.M)
+if keys != 1 or endpoints != 1:
+    sys.exit(f"{conf} must have one PublicKey line and one Endpoint line")
 
 with open(js, encoding="utf-8") as f:
     j = json.load(f)
@@ -95,10 +111,17 @@ with open(settings, encoding="utf-8") as f:
     s = json.load(f)
 s["serverDDNS"] = ip
 
-with open(conf, "w") as f:
-    f.write(text)
+# A new file renamed over the old one: Firewalla, or a run that `timeout` stops,
+# never sees half a file.
+def replace(path, write):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        write(f)
+    os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+    os.replace(tmp, path)
+
+replace(conf, lambda f: f.write(text))
 for path, data in ((js, j), (settings, s)):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
+    replace(path, lambda f, data=data: json.dump(data, f, separators=(",", ":"), ensure_ascii=False))
 PY
 }

@@ -15,7 +15,7 @@ fail() {
     exit 1
   fi
   local n delay
-  n=$(state_get fail_count); n=$(( ${n:-0} + 1 ))
+  n=$(( $(state_num fail_count) + 1 ))
   delay=$(next_delay "$n")
   state_set fail_count "$n"
   state_set next_attempt $(( $(date +%s) + delay ))
@@ -32,6 +32,11 @@ log_once() {
   fi
 }
 
+# clear_once <state-key> — the problem is gone: log it again when it comes back.
+clear_once() {
+  if [[ $(state_get "$1") == 1 ]]; then state_set "$1" 0; fi
+}
+
 cmd_keepalive() {
   local force=0 arg
   for arg in "$@"; do
@@ -43,36 +48,32 @@ cmd_keepalive() {
   done
 
   # One run at a time, also when someone runs it by hand while cron runs it.
-  exec 9>> "$LOCK_FILE"
-  if ! flock -n 9; then
-    echo "another keepalive run is busy; nothing done" >&2
+  if ! take_lock -n; then
+    echo "another firewalla-pia-uk run is busy; nothing done" >&2
     exit 0
   fi
   rotate_log
 
   local profile rc id ep server_pub addr
   profile=$(find_profile); rc=$?
-  if (( rc == 1 )); then
-    log_once no_client "no PIA WireGuard client (port 1337) found"
-    exit 0
-  fi
-  if (( rc == 2 )); then
-    log_once many_clients "more than one PIA client: $(find_profiles | paste -sd ' ' -) — remove the extra ones in the Firewalla app"
-    exit 1
-  fi
-  if (( rc != 0 )); then
-    log "cannot read the PIA client profile ($(find_profiles).json)"
-    exit 1
-  fi
+  case $rc in
+    0) ;;
+    1) log_once no_client "no PIA client chosen — run install.sh"; exit 0 ;;
+    2) log_once client_gone "the PIA client $(client_id) is gone (deleted in the app?) — run install.sh again"; exit 1 ;;
+    *) log_once bad_profile "cannot read the PIA client profile ($(client_id).json)"; exit 1 ;;
+  esac
   read -r id ep server_pub addr <<< "$profile"
-  if [[ $(state_get no_client) == 1 ]]; then state_set no_client 0; fi
-  if [[ $(state_get many_clients) == 1 ]]; then state_set many_clients 0; fi
+  clear_once no_client; clear_once client_gone; clear_once bad_profile
 
   # No interface: the user turned the client off in the app. Not ours to undo.
   local iface="vpn_$id"
-  interface_exists "$iface" || exit 0
+  if ! interface_exists "$iface"; then
+    log_once client_off "the PIA client $(profile_name "$id") ($id) is turned off in the Firewalla app — nothing to do"
+    exit 0
+  fi
+  clear_once client_off
 
-  local age next
+  local age now next
   age=$(handshake_age "$(sudo wg show "$iface" latest-handshakes 2>/dev/null)")
   # "never" can also mean that Firewalla has just (re)started the client: give
   # it a moment for its first handshake before registering again.
@@ -87,15 +88,16 @@ cmd_keepalive() {
     fi
     exit 0
   fi
-  next=$(state_get next_attempt)
-  if (( $(date +%s) < ${next:-0} && force == 0 )); then exit 0; fi
+  now=$(date +%s); next=$(state_num next_attempt)
+  # More than the longest back-off (6 h) ahead: set while the clock was wrong.
+  if (( now < next && next - now <= 21600 && force == 0 )); then exit 0; fi
 
   log "handshake ${age}s old — re-registering (profile $id, endpoint $ep)"
 
   local check_ep=${PIA_EP_OVERRIDE:-$ep} list resolved status server_ip server_cn
   list=$(mktemp)
   fetch_serverlist "$list" || { rm -f "$list"; fail "server list download failed"; }
-  resolved=$(serverlist_resolve "$list" "$check_ep" "$PIA_REGION"); rc=$?
+  resolved=$(serverlist_resolve "$list" "$check_ep" "$PIA_REGION" "$(state_get avoid_ip)"); rc=$?
   rm -f "$list"
   case $rc in
     0) ;;
@@ -105,9 +107,10 @@ cmd_keepalive() {
   read -r status server_ip server_cn <<< "$resolved"
   # PIA's list shows a changing subset of its servers, so "not listed" does not
   # prove that the server is gone; a listed server is a safe choice either way.
-  if [[ $status == RETIRED ]]; then
-    log "endpoint $check_ep is not in PIA's list now — using $server_ip ($server_cn)"
-  fi
+  case $status in
+    RETIRED) log "endpoint $check_ep is not in PIA's list now — using $server_ip ($server_cn)" ;;
+    AVOIDED) log "endpoint $check_ep did not answer last time — using $server_ip ($server_cn)" ;;
+  esac
 
   local client_pub
   client_pub=$(client_pubkey "$iface")
@@ -123,22 +126,28 @@ cmd_keepalive() {
   case $rc in
     0) ;;
     1) fail "PIA rejected the saved login" ;;
-    *) fail "cannot reach PIA's login server" ;;
+    2) fail "cannot reach PIA's login server" ;;
+    *) fail "PIA's login server gave no usable answer (HTTP $token)" ;;
   esac
-  body=$(add_key "$server_ip" "$server_cn" "$client_pub" "$token" 2>&1)
+  body=$(add_key "$server_ip" "$server_cn" "$client_pub" "$token" 2>&1); rc=$?
+  # No answer at all (PIA's errors come as an answer): the next attempt uses
+  # another server, else a server that is blocked for this box is tried forever.
+  if (( rc != 0 )); then state_set avoid_ip "$server_ip"; fi
   parsed=$(parse_addkey "$body") || fail "addKey failed: $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
   read -r new_addr new_pub _dns <<< "$parsed"
 
-  local backup
+  local backup since
   backup=$(backup_profile "$id") || fail "cannot back up the profile files"
   patch_profile "$id" "$server_ip" "$new_pub" "$new_addr" || fail "cannot write the profile files"
+  since=$(date +%s)
   apply_live "$iface" "$server_pub" "$new_pub" "$server_ip" "$addr" "$new_addr" \
     || log "live apply failed — Firewalla's restart will read the patched files"
-  # Without a handshake the repair did not work: back off instead of
-  # registering again (and making a new backup) every 5 minutes.
-  wait_handshake "$iface" \
+  # Only a handshake after the change proves the repair. Without one, back off
+  # instead of registering again (and making a new backup) every 5 minutes.
+  wait_handshake "$iface" "$since" \
     || fail "registered on $server_ip ($server_cn), address $new_addr, but no handshake within 30 s (backup: $backup)"
   log "repaired: now on $server_ip ($server_cn), address $new_addr — handshake OK (backup: $backup)"
   state_set fail_count 0
   state_set next_attempt 0
+  state_set avoid_ip ""
 }

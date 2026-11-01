@@ -1,0 +1,4 @@
+#!/bin/bash
+# Test stand-in for id: `id -u` prints SHIM_UID when it is set (SHIM_UID=0: root).
+if [[ ${1:-} == -u && -n ${SHIM_UID:-} ]]; then echo "$SHIM_UID"; exit 0; fi
+exec /usr/bin/id "$@"
