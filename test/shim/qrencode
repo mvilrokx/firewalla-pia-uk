@@ -1,0 +1,6 @@
+#!/bin/bash
+# Test stand-in for qrencode. Prints the text it got. When SHIM_IMPORT_FROM is
+# set, it also copies that client into $WG_DIR: the user "scans the code".
+if [[ -n ${SHIM_LOG:-} ]]; then echo "qrencode $*" >> "$SHIM_LOG"; fi
+printf 'QR<<%s>>\n' "$(cat)"
+if [[ -n ${SHIM_IMPORT_FROM:-} ]]; then cp "$SHIM_IMPORT_FROM"/* "$WG_DIR/"; fi
