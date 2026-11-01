@@ -147,7 +147,9 @@ recent log:
   so they are not shown.
 - **failures** — only shown after failed repairs, with the time of the next attempt.
 - **BBC** — asks BBC through the tunnel itself: `OK`, `blocked (geolocation)`,
-  `refused (<BBC's reason>)`, or `unknown (no answer)`.
+  `refused (<BBC's reason>)`, or `unknown (…)` with the cause: no answer (for
+  example a timeout), an HTTP error, or an answer it does not recognise. A single
+  `unknown` is often temporary: run `status` again.
 
 `status` exits with 0 when the handshake is recent and BBC says OK, else with 1.
 The project sends no notifications: `status` and the log
