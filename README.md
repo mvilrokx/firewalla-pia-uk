@@ -9,6 +9,11 @@ traffic through it, and repairs the tunnel by itself when PIA changes its server
 (PIA's normal OpenVPN profiles do not work for this, because BBC blocks their exit
 IPs.)
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.webp">
+  <img alt="Only BBC traffic goes through an encrypted tunnel from your home to a PIA server in London; everything else stays on your own connection" src="docs/how-it-works-light.webp">
+</picture>
+
 This project does three things:
 
 1. **Setup** — registers a WireGuard key with PIA's UK streaming server and shows
