@@ -1,0 +1,4 @@
+#!/bin/bash
+# Test stand-in for crontab: `crontab -l` prints the fake installed crontab.
+if [[ ${1:-} == -l ]]; then cat "$SHIM_CRONTAB" 2>/dev/null; fi
+exit 0
