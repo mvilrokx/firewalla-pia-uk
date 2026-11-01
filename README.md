@@ -134,7 +134,7 @@ client:      PIA UK Streaming (WG) (1D17_1D170)
 server:      85.203.46.72
 address:     10.186.0.136
 handshake:   12 s ago
-last repair: 2026-11-01 03:10:22 repaired: now on 85.203.46.72 (Server-10870-2a), address 10.186.0.136 — handshake OK (backup: …)
+last repair: 2026-11-01 03:10:22 repaired: now on 85.203.46.72 (Server-10870-2a), address 10.186.0.136 — handshake OK (profile 1D17_1D170, backup: …)
 BBC:         OK
 recent log:
 …
@@ -142,7 +142,9 @@ recent log:
 
 - **handshake** — when PIA last answered. Older than 5 minutes means the tunnel is
   down; `never` means PIA never answered.
-- **last repair** — the last time the keepalive registered the key again.
+- **last repair** — the last time the keepalive registered this client's key again
+  (`none` if it never had to). Repairs logged before v0.1.4 do not name the client,
+  so they are not shown.
 - **failures** — only shown after failed repairs, with the time of the next attempt.
 - **BBC** — asks BBC through the tunnel itself: `OK`, `blocked (geolocation)`,
   `refused (<BBC's reason>)`, or `unknown (no answer)`.
