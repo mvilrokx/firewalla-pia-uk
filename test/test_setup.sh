@@ -41,6 +41,26 @@ assert_contains "no import: tells the user" "$out" "no new client after 15 min. 
 assert_eq "no import: conf kept for Import Profile" "$(ls "$APP_DIR/pia-uk.conf")" "$APP_DIR/pia-uk.conf"
 assert_eq "no import: conf is private" "$(ls -l "$APP_DIR/pia-uk.conf" | cut -c1-10)" "-rw-------"
 
+reset; cp "$FIXTURES"/profile/* "$WG_DIR/"; out=$("$BASH" "$CLI" setup 2>&1; echo "rc=$?")
+assert_contains "existing client: refused" "$out" "error: a PIA client already exists (1D17_1D170); setup only makes the first one"
+assert_contains "existing client: rc 1" "$out" "rc=1"
+assert_not_contains "existing client: no PIA call" "$(cat "$SHIM_LOG")" "curl-arg"
+
+reset; out=$(POLL_SECS=1 SETUP_PROGRESS_SECS=1 wait_for_import "PUBOF:nobody" 2 2>&1)
+assert_contains "progress while waiting" "$out" "Still waiting for the new client (1 s)"
+
+reset; out=$(SHIM_IMPORT_FROM="$FIXTURES/imported" SHIM_HANDSHAKE_AGE=100000 "$BASH" "$CLI" setup 2>&1; echo "rc=$?")
+assert_contains "no handshake: rc 1" "$out" "rc=1"
+assert_eq "no handshake: conf deleted once imported" "$(ls "$APP_DIR/pia-uk.conf" 2>/dev/null)" ""
+
+reset; out=$(SHIM_CURL_FAIL_URL=token "$BASH" "$CLI" setup 2>&1)
+assert_contains "no answer from PIA" "$out" "error: cannot reach PIA's login server"
+reset; out=$(SHIM_TOKEN_BODY='{}' "$BASH" "$CLI" setup 2>&1)
+assert_contains "wrong login" "$out" "error: PIA rejected the saved login"
+reset; printf '%s' '{"status":"OK","server_key":"NEWSERVERKEY0000000000000000000000000000000=","peer_ip":"10.186.0.136"}' > "$T/nodns.json"
+out=$(SHIM_ADDKEY_FILE="$T/nodns.json" "$BASH" "$CLI" setup 2>&1)
+assert_contains "no DNS server" "$out" "error: PIA sent no DNS server"
+
 reset; out=$(SHIM_IMPORT_FROM="$FIXTURES/imported" SHIM_IFACE_MISSING=1 "$BASH" "$CLI" setup 2>&1; echo "rc=$?")
 assert_contains "client off: hint" "$out" 'Turn on "PIA UK Streaming" in the Firewalla app (VPN Client), then wait here.'
 assert_contains "client off: rc 1" "$out" "rc=1"
