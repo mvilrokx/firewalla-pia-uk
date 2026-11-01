@@ -21,7 +21,7 @@ assert_contains "adopt: message" "$out" "Using existing PIA client: PIA UK Strea
 assert_eq "credentials saved" "$(cat "$APP_DIR/credentials")" "$(printf 'p1234567\n@p;w<"$x ,y')"
 assert_eq "credentials private" "$(ls -l "$APP_DIR/credentials" | cut -c1-10)" "-rw-------"
 assert_eq "one cron line" "$(cronlines)" "1"
-assert_contains "cron line" "$(cat "$USER_CRONTAB")" "*/5 * * * * flock -n /dev/shm/firewalla-pia-uk.lock timeout 110 $APP_DIR/bin/firewalla-pia-uk keepalive >>$APP_DIR/keepalive.log 2>&1"
+assert_contains "cron line" "$(cat "$USER_CRONTAB")" "*/5 * * * * timeout 240 $APP_DIR/bin/firewalla-pia-uk keepalive >>$APP_DIR/keepalive.log 2>&1"
 assert_contains "crontab installed" "$(cat "$SHIM_CRONTAB")" "firewalla-pia-uk keepalive"
 assert_eq "CLI copied" "$(ls -l "$APP_DIR/bin/firewalla-pia-uk" | cut -c4)" "x"
 assert_contains "dry run shown" "$out" "DRY RUN"
@@ -33,17 +33,34 @@ assert_contains "update: keeps login" "$out" "Using the saved PIA login."
 assert_eq "update: login unchanged" "$(sed -n 2p "$APP_DIR/credentials")" '@p;w<"$x ,y'
 assert_eq "update: still one cron line" "$(cronlines)" "1"
 
+out=$(SHIM_IFACE_MISSING=1 inst)
+assert_not_contains "test run shows only its own log lines" "$out" "DRY RUN"
+assert_contains "test run that logs nothing says so" "$out" "(no log lines)"
+
+reset; cp "$FIXTURES"/profile/* "$WG_DIR/"; printf 'p1234567\npw\n' > "$PROMPT_IN"
+printf '0 3 * * * echo other\n*/5 * * * * flock -n /dev/shm/firewalla-pia-uk.lock timeout 110 %s/bin/firewalla-pia-uk keepalive >/dev/null 2>&1\n' "$APP_DIR" > "$USER_CRONTAB"
+SHIM_HANDSHAKE_AGE=10 inst >/dev/null
+assert_eq "update: old cron line replaced" "$(grep 'firewalla-pia-uk keepalive' "$USER_CRONTAB")" \
+  "*/5 * * * * timeout 240 $APP_DIR/bin/firewalla-pia-uk keepalive >>$APP_DIR/keepalive.log 2>&1"
+assert_contains "update: other cron jobs kept" "$(cat "$USER_CRONTAB")" "0 3 * * * echo other"
+
+reset; cp "$FIXTURES"/profile/* "$WG_DIR/"; printf 'p1234567\npw\n' > "$PROMPT_IN"
+out=$(SHIM_CURL_FAIL_URL=token inst)
+assert_contains "no answer from PIA: message" "$out" "error: cannot reach PIA to check the login. Check the Internet connection, then run install.sh again."
+assert_eq "no answer from PIA: no login file" "$(ls "$APP_DIR"/credentials* 2>/dev/null)" ""
+
 reset; cp "$FIXTURES"/profile/* "$WG_DIR/"; printf 'p1234567\nwrong\n' > "$PROMPT_IN"
 out=$(SHIM_TOKEN_BODY='{}' inst)
 assert_contains "bad login: message" "$out" "error: PIA rejected the login. Run install.sh again."
 assert_contains "bad login: rc 1" "$out" "rc=1"
-assert_eq "bad login: no credentials" "$(ls "$APP_DIR/credentials" 2>/dev/null)" ""
+assert_eq "bad login: no login file" "$(ls "$APP_DIR"/credentials* 2>/dev/null)" ""
 assert_eq "bad login: no cron line" "$(cronlines)" "0"
 
 reset; cp "$FIXTURES"/profile/* "$FIXTURES"/imported/* "$WG_DIR/"; printf 'p1234567\npw\n' > "$PROMPT_IN"
 out=$(inst)
 assert_contains "two clients: message" "$out" "error: more than one PIA client: 1D17_1D170 2C3D_2C3D0"
 assert_eq "two clients: no cron line" "$(cronlines)" "0"
+assert_eq "two clients: nothing installed" "$(ls -d "$APP_DIR" 2>/dev/null)" ""
 
 reset; cp "$FIXTURES"/profile/* "$WG_DIR/"; printf 'p1234567\n  pw with spaces  \n' > "$PROMPT_IN"
 SHIM_HANDSHAKE_AGE=10 inst >/dev/null
@@ -67,6 +84,10 @@ assert_eq "fresh box: cron line" "$(cronlines)" "1"
 
 out=$(REQUIRED_TOOLS="bash nosuchtool" inst)
 assert_contains "missing tool" "$out" "error: missing tool: nosuchtool"
+
+printf 'n\n' > "$PROMPT_IN"; out=$(SHIM_UPDATE_CRONTAB_NOOP=1 "$BASH" "$APP_DIR/uninstall.sh" 2>&1; echo "rc=$?")
+assert_contains "uninstall: cron line still active → error" "$out" "error: the cron line is still in pi's crontab"
+assert_contains "uninstall: cron line still active → rc 1" "$out" "rc=1"
 
 printf 'n\n' > "$PROMPT_IN"; out=$("$BASH" "$APP_DIR/uninstall.sh" 2>&1)
 assert_eq "uninstall n: cron line gone" "$(cronlines)" "0"

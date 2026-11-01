@@ -14,6 +14,9 @@ if [[ -f $USER_CRONTAB ]]; then
   rm -f "$tmp"
   bash "$FW_UPDATE_CRONTAB"
 fi
+if crontab -l | grep -q 'firewalla-pia-uk keepalive'; then
+  die "the cron line is still in pi's crontab. Run: bash $FW_UPDATE_CRONTAB"
+fi
 echo "Removed the cron line."
 
 answer=""
