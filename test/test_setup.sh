@@ -46,8 +46,9 @@ assert_contains "existing client: refused" "$out" "error: a PIA client already e
 assert_contains "existing client: rc 1" "$out" "rc=1"
 assert_not_contains "existing client: no PIA call" "$(cat "$SHIM_LOG")" "curl-arg"
 
-reset; out=$(POLL_SECS=1 SETUP_PROGRESS_SECS=1 wait_for_import "PUBOF:nobody" 2 2>&1)
-assert_contains "progress while waiting" "$out" "Still waiting for the new client (1 s)"
+# 3 s, not 2: with whole-second clocks a 2 s wait can end before the first note.
+reset; out=$(POLL_SECS=1 SETUP_PROGRESS_SECS=1 wait_for_import "PUBOF:nobody" 3 2>&1)
+assert_contains "progress while waiting" "$out" "Still waiting for the new client ("
 
 reset; out=$(SHIM_IMPORT_FROM="$FIXTURES/imported" SHIM_HANDSHAKE_AGE=100000 "$BASH" "$CLI" setup 2>&1; echo "rc=$?")
 assert_contains "no handshake: rc 1" "$out" "rc=1"

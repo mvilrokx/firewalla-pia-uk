@@ -27,11 +27,16 @@ log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
 die() { echo "error: $*" >&2; exit 1; }
 
 # Cron runs every 5 minutes for months, so the log must not grow without limit.
+# The trim rewrites the same file (cat, not mv): cron has already opened it for
+# the run's error output, and with mv that output would go to a deleted file.
 rotate_log() {
   [[ -f $LOG_FILE ]] || return 0
-  local size; size=$(wc -c < "$LOG_FILE" | tr -d ' ')
+  local size tmp
+  size=$(wc -c < "$LOG_FILE" | tr -d ' ')
   if (( size > 200000 )); then
-    tail -n 500 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+    tmp=$(mktemp)
+    tail -n 500 "$LOG_FILE" > "$tmp" && cat "$tmp" > "$LOG_FILE"
+    rm -f "$tmp"
   fi
 }
 

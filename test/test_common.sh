@@ -28,6 +28,12 @@ assert_eq "log line starts with a date" "$(cut -c5,8,11,14,17 "$LOG_FILE")" "-- 
 yes "$(printf 'x%.0s' {1..100})" | head -3000 > "$LOG_FILE"
 rotate_log
 assert_eq "rotate_log keeps 500 lines" "$(wc -l < "$LOG_FILE" | tr -d ' ')" "500"
+yes "$(printf 'x%.0s' {1..100})" | head -3000 > "$LOG_FILE"
+exec 8>> "$LOG_FILE"   # cron's >> opens the log before the run starts
+rotate_log
+echo "error output after the trim" >&8
+exec 8>&-
+assert_eq "output through an already open log reaches the log" "$(tail -n 1 "$LOG_FILE")" "error output after the trim"
 printf 'short\n' > "$LOG_FILE"; rotate_log
 assert_eq "small log untouched" "$(cat "$LOG_FILE")" "short"
 
