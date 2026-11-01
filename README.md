@@ -2,7 +2,7 @@
 
 Watch BBC iPlayer from outside the UK on every device in your house — smart TVs
 and Apple TVs too — with a [Firewalla](https://firewalla.com) and a
-[PIA](https://www.privateinternetaccess.com) (Private Internet Access) subscription.
+[PIA](https://www.privateinternetaccess.com/pages/buy-a-vpn/1218buyavpn?conversionpoint=RaFInv_30d&invite=U2FsdGVkX19hcdBCcwxwb7SoJUZKvUTJidVIBetIKak%2CcMamTokEOrLryijakE29fmVsRsI) (Private Internet Access) subscription.
 
 It sets up a PIA WireGuard tunnel to the UK on your Firewalla, sends only BBC
 traffic through it, and repairs the tunnel by itself when PIA changes its servers.
@@ -25,8 +25,11 @@ This project does three things:
 ## Requirements
 
 - A Firewalla box (tested on the Firewalla Gold Pro).
-- A PIA subscription.
+- A PIA subscription. No account yet?
+  [Sign up here](https://www.privateinternetaccess.com/pages/buy-a-vpn/1218buyavpn?conversionpoint=RaFInv_30d&invite=U2FsdGVkX19hcdBCcwxwb7SoJUZKvUTJidVIBetIKak%2CcMamTokEOrLryijakE29fmVsRsI)
+  (the PIA links here are a referral link).
 - SSH access to the box as `pi` (Firewalla app → Settings → Advanced → Configurations → SSH Console).
+  Run everything as `pi`, not with `sudo`: the scripts use `sudo` themselves where they must.
 - The Firewalla phone app, and a Firewalla MSP account ([firewalla.net](https://firewalla.net),
   formerly my.firewalla.com). The free tier is enough.
 
@@ -45,18 +48,20 @@ less install.sh   # read it first
 The installer:
 
 1. Checks that the box has the tools it needs.
-2. Copies the scripts to `/home/pi/.firewalla/config/firewalla-pia-uk/`.
-3. Asks for your PIA username and password, and checks them with PIA. The login is
+2. Lists your WireGuard clients on port 1337 (PIA uses this port) and asks which
+   one is your PIA UK client. The keepalive changes only that client. Type `0` to
+   make a new one. If there is no client on port 1337, it does not ask.
+3. Copies the scripts to `/home/pi/.firewalla/config/firewalla-pia-uk/`.
+4. Asks for your PIA username and password, and checks them with PIA. The login is
    stored on the box in `credentials` (readable by `pi` only) and is sent only to
    PIA, because the keepalive needs it to register the key again.
-4. Uses your PIA WireGuard client if one exists (a client on port 1337). If there is
-   none, it registers a new key and shows a **QR code**. In the Firewalla app, go to
-   **VPN Client → add → WireGuard → Scan QR Code**, scan it, name the client
-   (for example "PIA UK Streaming"), and save. If you prefer, use **Import Profile**
-   with the file the installer names.
-5. Adds one line to Firewalla's `user_crontab`, so the keepalive runs every 5 minutes
+5. For a new client: registers a new key and shows a **QR code**. In the Firewalla
+   app, go to **VPN Client → add → WireGuard → Scan QR Code**, scan it, name the
+   client (for example "PIA UK Streaming"), and save. If you cannot scan it, copy
+   the file that the installer names to the phone and use **Import Profile**.
+6. Adds one line to Firewalla's `user_crontab`, so the keepalive runs every 5 minutes
    and survives reboots and firmware updates.
-6. Does a test run that changes nothing.
+7. Does a test run that changes nothing.
 
 ## Route rule
 
@@ -139,8 +144,8 @@ recent log:
   down; `never` means PIA never answered.
 - **last repair** — the last time the keepalive registered the key again.
 - **failures** — only shown after failed repairs, with the time of the next attempt.
-- **BBC** — asks BBC through the tunnel itself: `OK`, `blocked (geolocation)`, or
-  `unknown (no answer)`.
+- **BBC** — asks BBC through the tunnel itself: `OK`, `blocked (geolocation)`,
+  `refused (<BBC's reason>)`, or `unknown (no answer)`.
 
 `status` exits with 0 when the handshake is recent and BBC says OK, else with 1.
 The project sends no notifications: `status` and the log
@@ -150,24 +155,26 @@ The project sends no notifications: `status` and the log
 
 Every 5 minutes the keepalive:
 
-1. Finds the PIA client: the one WireGuard client on port 1337.
+1. Uses the PIA client that you chose when you installed.
 2. Does nothing if the client is turned off in the app, or if the handshake is
    younger than 5 minutes (no Internet calls in that case). A client that has never
    had a handshake gets 30 seconds first, because Firewalla may have just started it.
 3. Otherwise reads PIA's server list. If the client's server is not in the list now,
    it moves to the first UK streaming server (`uk_2`) in the list. (The list shows a
    changing subset of PIA's servers, so "not in the list" does not always mean that
-   the server is gone, but a listed server is always a safe choice.)
+   the server is gone, but a listed server is always a safe choice.) A server that
+   did not answer the last attempt is skipped once.
 4. Gets a token with your PIA login and registers the client's public key again.
 5. Backs up the client's three profile files (the newest 10 backups are kept in
    `backup/`), writes the new server, server key, and address into them, and
    applies the change to the live tunnel. Firewalla's app shows the new values.
+6. Logs `repaired:` only after a new handshake with PIA.
 
 After a failure it waits 15 minutes, then 30, and so on, up to 6 hours. Only one
 run happens at a time, also when you start one by hand while cron starts another.
 
 It writes only to its own folder, to one line in `user_crontab`, and to the three
-profile files of the PIA client. The log stays small: when it is larger than
+profile files of the client that you chose. The log stays small: when it is larger than
 200 KB, the keepalive keeps only its last 500 lines. Of the profile backups, it
 keeps the newest 10.
 
@@ -183,13 +190,22 @@ keeps the newest 10.
     again (see [Update](#update)). It asks for the login.
   - `cannot reach PIA's login server`: the box cannot reach PIA. The keepalive tries
     again later by itself.
-- **"more than one PIA client"** — delete the extra WireGuard clients on port 1337
-  in the app. The keepalive does nothing until only one is left.
-- **Setup timed out** — import the file the installer named
-  (`/home/pi/.firewalla/config/firewalla-pia-uk/pia-uk.conf`) with **Import
-  Profile**, then run `./install.sh` again. It finds the client and continues. If
-  the unpacked folder in `/tmp` is gone (for example after a reboot), download the
-  release again as in [Install](#install).
+  - `PIA's login server gave no usable answer (HTTP …)`: a problem at PIA, for
+    example an outage. Your login is not the cause. The keepalive tries again later
+    by itself.
+- **`the PIA client … is gone`** — the client was deleted in the app. Run the
+  installer again (see [Update](#update)) and choose another client, or type `0`
+  to make a new one.
+- **`the PIA client … is turned off`** — turn it on in the app (**VPN Client**).
+- **Setup timed out** — show the QR code again:
+
+  ```bash
+  qrencode -t ansiutf8 < /home/pi/.firewalla/config/firewalla-pia-uk/pia-uk.conf
+  ```
+
+  Scan it, then run `./install.sh` again and choose the new client. If the unpacked
+  folder in `/tmp` is gone (for example after a reboot), download the release again
+  as in [Install](#install).
 - **iPlayer fails on an IPv6 network** while `status` is OK — the tunnel carries IPv4
   only. BBC has no IPv6 addresses today (October 2026). If that changes, BBC traffic
   can go around the tunnel over IPv6.
@@ -197,7 +213,8 @@ keeps the newest 10.
 ## Update
 
 Download the new release as in [Install](#install) and run `./install.sh` again. It
-keeps your PIA login and your client, and updates the cron line.
+keeps your PIA login and updates the cron line. When it asks for the client, press
+Enter to keep the one in use.
 
 ## Uninstall
 
