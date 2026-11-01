@@ -22,7 +22,8 @@ This project does three things:
 - A Firewalla box (tested on the Firewalla Gold Pro).
 - A PIA subscription.
 - SSH access to the box as `pi` (Firewalla app → Settings → Advanced → Configurations → SSH Console).
-- The Firewalla phone app and the Firewalla web app ([my.firewalla.com](https://my.firewalla.com)).
+- The Firewalla phone app, and a Firewalla MSP account ([firewalla.net](https://firewalla.net),
+  formerly my.firewalla.com). The free tier is enough.
 
 ## Install
 
@@ -56,10 +57,10 @@ The installer:
 
 Send only BBC traffic through the tunnel:
 
-1. In the **web app** ([my.firewalla.com](https://my.firewalla.com)), make a Target
-   List named "BBC iPlayer". The phone app cannot enter these entries. Use
-   **wildcard** entries (they match subdomains; a plain `bbc.co.uk` misses the
-   live-TV hosts):
+1. In **Firewalla MSP** ([firewalla.net](https://firewalla.net); the free tier can
+   do this), make a Target List named "BBC iPlayer". The phone app cannot enter
+   these entries. Use **wildcard** entries (they match subdomains; a plain
+   `bbc.co.uk` misses the live-TV hosts):
    - `*.bbc.co.uk`
    - `*.bbci.co.uk`
    - `*.bbc.com`
@@ -104,7 +105,7 @@ Good to know:
     click **Flush socket pools**. Or quit Chrome and start it again.
   - **Firefox** also keeps its own cache: open `about:networking#dns` and click
     **Clear DNS Cache**, or quit Firefox (⌘Q) and start it again.
-- Target-list changes in the web app reach the box at Firewalla's next refresh. To
+- Target-list changes in Firewalla MSP reach the box at Firewalla's next refresh. To
   force it, delete the Route rule and make it again with the same list.
 - When any VPN client is added or deleted, Firewalla reloads its routing, and
   streams that are playing stop. Start them again.
