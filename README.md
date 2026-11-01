@@ -80,9 +80,15 @@ Send only BBC traffic through the tunnel:
 Good to know:
 
 - Devices must use Firewalla's DNS, or the rule does not see their traffic. On an
-  iPhone, turn off **Limit IP Address Tracking** for your home Wi-Fi.
-- After you change the rule, flush the device's DNS cache (on iOS: airplane mode on
-  and off). Pausing a video does not do this.
+  iPhone, turn off **Limit IP Address Tracking** for your home Wi-Fi. In Firefox,
+  if iPlayer says you are outside the UK, set Settings → Privacy & Security →
+  **DNS over HTTPS** to **Off**: with it on, Firefox asks another DNS server.
+- After you change the rule, flush the device's DNS cache. Pausing a video does not
+  do this.
+  - iPhone: airplane mode on and off.
+  - Mac: `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`.
+  - Firefox also keeps its own cache: open `about:networking#dns` and click
+    **Clear DNS Cache**, or quit Firefox (⌘Q) and start it again.
 - Target-list changes in the web app reach the box at Firewalla's next refresh. To
   force it, delete the Route rule and make it again with the same list.
 - When any VPN client is added or deleted, Firewalla reloads its routing, and
