@@ -25,8 +25,27 @@ else:
 }
 
 # bbc_verdict <iface> — asks BBC's media selector through the tunnel itself.
+# Prints bbc_classify's verdict, and when that is unknown, why:
+# noanswer:<reason>, http:<status>, or unrecognised.
 bbc_verdict() {
-  bbc_classify "$(curl -s --max-time 15 --interface "$1" "$BBC_CHECK_URL")"
+  local out rc code verdict
+  out=$(curl -s --max-time 15 --interface "$1" -w '\n%{http_code}' "$BBC_CHECK_URL"); rc=$?
+  case $rc in
+    0) ;;
+    6) echo "noanswer:cannot resolve the host"; return ;;
+    7) echo "noanswer:cannot connect"; return ;;
+    28) echo "noanswer:timeout"; return ;;
+    *) echo "noanswer:curl error $rc"; return ;;
+  esac
+  code=${out##*$'\n'}
+  verdict=$(bbc_classify "${out%$'\n'*}")
+  if [[ $verdict != unknown ]]; then
+    echo "$verdict"
+  elif [[ $code != 200 ]]; then
+    echo "http:$code"
+  else
+    echo unrecognised
+  fi
 }
 
 # fmt_time <epoch> → local "YYYY-mm-dd HH:MM". python3, because `date -r` and
@@ -77,7 +96,9 @@ cmd_status() {
       OK) row BBC OK ;;
       blocked) row BBC "blocked (geolocation)"; healthy=0 ;;
       result:*) row BBC "refused (${verdict#result:})"; healthy=0 ;;
-      *) row BBC "unknown (no answer)"; healthy=0 ;;
+      noanswer:*) row BBC "unknown (no answer: ${verdict#noanswer:})"; healthy=0 ;;
+      http:*) row BBC "unknown (HTTP ${verdict#http:})"; healthy=0 ;;
+      *) row BBC "unknown (answer not recognised)"; healthy=0 ;;
     esac
   fi
 

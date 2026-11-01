@@ -41,6 +41,17 @@ printf '{"result":"notukerror"}' > "$T/refused.json"
 out=$(SHIM_HANDSHAKE_AGE=10 SHIM_BBC_FILE="$T/refused.json" st)
 assert_contains "refused: BBC's reason" "$out" "BBC:         refused (notukerror)"
 assert_contains "refused: rc 1" "$out" "rc=1"
+out=$(SHIM_HANDSHAKE_AGE=10 SHIM_CURL_FAIL_URL=mediaselector st 2>/dev/null)
+assert_contains "BBC timeout: says why" "$out" "BBC:         unknown (no answer: timeout)"
+assert_contains "BBC timeout: rc 1" "$out" "rc=1"
+printf '<html>503 Service Unavailable</html>' > "$T/error.html"
+out=$(SHIM_HANDSHAKE_AGE=10 SHIM_HTTP_CODE=503 SHIM_BBC_FILE="$T/error.html" st)
+assert_contains "BBC error page: the HTTP status" "$out" "BBC:         unknown (HTTP 503)"
+printf '{"something":"else"}' > "$T/odd.json"
+out=$(SHIM_HANDSHAKE_AGE=10 SHIM_BBC_FILE="$T/odd.json" st)
+assert_contains "BBC answer not recognised: says so" "$out" "BBC:         unknown (answer not recognised)"
+out=$(SHIM_HANDSHAKE_AGE=10 SHIM_HTTP_CODE=403 SHIM_BBC_FILE="$FIXTURES/mediaselector_blocked.json" st)
+assert_contains "BBC block with an HTTP error: still blocked" "$out" "BBC:         blocked (geolocation)"
 
 printf 'fail_count=2\nnext_attempt=1793500000\n' > "$APP_DIR/state"
 out=$(SHIM_HANDSHAKE_AGE=never st)
