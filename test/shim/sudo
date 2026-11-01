@@ -1,0 +1,3 @@
+#!/bin/bash
+# Test stand-in for sudo: runs the command as the current user.
+exec "$@"

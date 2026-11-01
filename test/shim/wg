@@ -1,0 +1,26 @@
+#!/bin/bash
+# Test stand-in for wg. Its answers come from SHIM_* environment variables;
+# after a `wg set` it reports a fresh handshake (marker file in $SHIM_STATE).
+if [[ -n ${SHIM_LOG:-} ]]; then echo "wg $*" >> "$SHIM_LOG"; fi
+case ${1:-} in
+  show)
+    if [[ ${SHIM_IFACE_MISSING:-0} == 1 ]]; then
+      echo "Unable to access interface: No such device" >&2
+      exit 1
+    fi
+    case ${3:-} in
+      latest-handshakes)
+        age=${SHIM_HANDSHAKE_AGE:-10}
+        if [[ -n ${SHIM_STATE:-} && -f $SHIM_STATE/fresh ]]; then age=5; fi
+        if [[ $age == never ]]; then ts=0; else ts=$(( $(date +%s) - age )); fi
+        printf 'SERVERPUB\t%s\n' "$ts" ;;
+      public-key) echo "${SHIM_CLIENT_PUB:-CLIENTPUB=}" ;;
+      peers) echo "SERVERPUB" ;;
+      *) echo "interface: $2" ;;
+    esac ;;
+  set)
+    if [[ -n ${SHIM_STATE:-} ]]; then touch "$SHIM_STATE/fresh"; fi
+    exit "${SHIM_WG_SET_RC:-0}" ;;
+  genkey) echo "PRIVTEST=" ;;
+  pubkey) printf 'PUBOF:%s\n' "$(cat)" ;;
+esac

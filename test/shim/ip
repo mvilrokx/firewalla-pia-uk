@@ -1,0 +1,4 @@
+#!/bin/bash
+# Test stand-in for ip: records the call.
+if [[ -n ${SHIM_LOG:-} ]]; then echo "ip $*" >> "$SHIM_LOG"; fi
+exit 0
