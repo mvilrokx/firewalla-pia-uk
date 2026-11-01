@@ -38,7 +38,7 @@ assert_contains "current dry-run: age" "$(logtext)" "handshake 10000"
 assert_contains "current dry-run: target" "$(logtext)" "DRY RUN: would addKey CLIENTPUB= at https://Server-10871-2a:1337 (85.203.46.73)"
 
 reset; SHIM_HANDSHAKE_AGE=100000 run --dry-run >/dev/null
-assert_contains "retired dry-run" "$(logtext)" "endpoint 85.203.46.180 retired — replacement 85.203.46.72 (Server-10870-2a)"
+assert_contains "unlisted dry-run" "$(logtext)" "endpoint 85.203.46.180 is not in PIA's list now — using 85.203.46.72 (Server-10870-2a)"
 
 reset; echo "next_attempt=$(( $(date +%s) + 600 ))" > "$APP_DIR/state"
 out=$(SHIM_HANDSHAKE_AGE=100000 run --dry-run)
@@ -91,6 +91,35 @@ assert_contains "broken wg: logged" "$(logtext)" "FAIL(1): cannot read the clien
 reset; printf 'fail_count=2\nnext_attempt=%s\n' $(( $(date +%s) + 20000 )) > "$APP_DIR/state"
 SHIM_HANDSHAKE_AGE=10 run >/dev/null
 assert_eq "fresh handshake clears the back-off" "$(sort "$APP_DIR/state" | paste -sd ' ' -)" "fail_count=0 next_attempt=0"
+
+reset; SHIM_HANDSHAKE_AGE=100000 PIA_SERVERLIST_URL="file://$FIXTURES/serverlist_broken.json" run --dry-run >/dev/null
+assert_contains "dry-run failure: logged" "$(logtext)" "FAIL (dry run): server list is not valid JSON"
+assert_eq "dry-run failure: no back-off" "$(cat "$APP_DIR/state" 2>/dev/null)" ""
+
+reset; cp "$FIXTURES"/imported/* "$WG_DIR/"; run >/dev/null; out=$(run)
+assert_eq "two clients, second run: rc 1" "$out" "rc=1"
+assert_eq "two clients: logged once" "$(grep -c 'more than one PIA client' "$LOG")" "1"
+
+reset; out=$(SHIM_HANDSHAKE_AGE=100000 SHIM_CURL_FAIL_URL=addKey run)
+assert_eq "addKey timeout: rc 1" "$out" "rc=1"
+assert_contains "addKey timeout: curl's reason logged" "$(logtext)" "FAIL(1): addKey failed: curl: (28) Operation timed out"
+
+reset; out=$(SHIM_HANDSHAKE_AGE=100000 SHIM_CURL_FAIL_URL=token run)
+assert_contains "no answer from PIA: logged" "$(logtext)" "FAIL(1): cannot reach PIA's login server"
+reset; out=$(SHIM_HANDSHAKE_AGE=100000 SHIM_TOKEN_BODY='{}' run)
+assert_contains "wrong login: logged" "$(logtext)" "FAIL(1): PIA rejected the saved login"
+
+reset; out=$(SHIM_FLOCK_BUSY=1 SHIM_HANDSHAKE_AGE=100000 run 2>&1)
+assert_contains "busy: says so" "$out" "another keepalive run is busy; nothing done"
+assert_contains "busy: rc 0" "$out" "rc=0"
+assert_eq "busy: no log" "$(logtext)" ""
+
+reset; out=$(SHIM_HANDSHAKE_AGE=never-then-fresh run)
+assert_eq "just-started client: rc 0 and silent" "$out|$(logtext)" "rc=0|"
+assert_not_contains "just-started client: no Internet call" "$(cat "$SHIM_LOG")" "curl-arg"
+reset; out=$(SHIM_HANDSHAKE_AGE=never run)
+assert_eq "never-handshaking client: repaired, rc 0" "$out" "rc=0"
+assert_contains "never-handshaking client: logged" "$(logtext)" "repaired: now on 85.203.46.72"
 
 reset; out=$(run --bogus 2>/dev/null); assert_eq "unknown flag: rc 64" "$out" "rc=64"
 out=$("$BASH" "$CLI" 2>/dev/null; echo "rc=$?"); assert_eq "no command: rc 64" "$out" "rc=64"

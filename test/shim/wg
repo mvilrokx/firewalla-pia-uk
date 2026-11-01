@@ -12,6 +12,10 @@ case ${1:-} in
     case ${3:-} in
       latest-handshakes)
         age=${SHIM_HANDSHAKE_AGE:-10}
+        # never-then-fresh: a client that Firewalla has just started.
+        if [[ $age == never-then-fresh ]]; then
+          if [[ -f $SHIM_STATE/seen ]]; then age=5; else touch "$SHIM_STATE/seen"; age=never; fi
+        fi
         if [[ -n ${SHIM_STATE:-} && -f $SHIM_STATE/fresh ]]; then age=5; fi
         if [[ $age == never ]]; then ts=0; else ts=$(( $(date +%s) - age )); fi
         printf 'SERVERPUB\t%s\n' "$ts" ;;

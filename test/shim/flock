@@ -1,0 +1,4 @@
+#!/bin/bash
+# Test stand-in for flock: the lock is free unless SHIM_FLOCK_BUSY=1.
+if [[ ${SHIM_FLOCK_BUSY:-0} == 1 ]]; then exit 1; fi
+exit 0

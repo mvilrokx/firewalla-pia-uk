@@ -1,11 +1,19 @@
 #!/bin/bash
 # The keepalive: cron runs it every 5 minutes. While the handshake is fresh it
-# does nothing. When PIA has forgotten the key or retired the server, it
-# registers the key again (on the region's current server if needed), patches
-# the client's profile files, and applies the change to the live interface.
+# does nothing. When PIA has forgotten the key or the server has gone, it
+# registers the key again (on a server in PIA's current list if needed),
+# patches the client's profile files, and applies the change to the live
+# interface.
 
-# fail <msg> — record the failure, schedule the next attempt, exit 1.
+DRY_RUN=0
+
+# fail <msg> — record the failure, schedule the next attempt, exit 1. A dry run
+# only logs: a test run must not delay the real one.
 fail() {
+  if (( DRY_RUN )); then
+    log "FAIL (dry run): $*"
+    exit 1
+  fi
   local n delay
   n=$(state_get fail_count); n=$(( ${n:-0} + 1 ))
   delay=$(next_delay "$n")
@@ -15,29 +23,41 @@ fail() {
   exit 1
 }
 
+# log_once <state-key> <msg> — logs a lasting problem once, not every 5 minutes,
+# so that it does not push the "repaired:" lines out of the log.
+log_once() {
+  if [[ $(state_get "$1") != 1 ]]; then
+    log "$2"
+    state_set "$1" 1
+  fi
+}
+
 cmd_keepalive() {
-  local dry=0 force=0 arg
+  local force=0 arg
   for arg in "$@"; do
     case $arg in
-      --dry-run) dry=1 ;;
+      --dry-run) DRY_RUN=1 ;;
       --force) force=1 ;;
       *) echo "unknown flag: $arg" >&2; exit 64 ;;
     esac
   done
+
+  # One run at a time, also when someone runs it by hand while cron runs it.
+  exec 9>> "$LOCK_FILE"
+  if ! flock -n 9; then
+    echo "another keepalive run is busy; nothing done" >&2
+    exit 0
+  fi
   rotate_log
 
   local profile rc id ep server_pub addr
   profile=$(find_profile); rc=$?
   if (( rc == 1 )); then
-    # Logged once, not every 5 minutes, until a client appears.
-    if [[ $(state_get no_client) != 1 ]]; then
-      log "no PIA WireGuard client (port 1337) found"
-      state_set no_client 1
-    fi
+    log_once no_client "no PIA WireGuard client (port 1337) found"
     exit 0
   fi
   if (( rc == 2 )); then
-    log "more than one PIA client: $(find_profiles | paste -sd ' ' -) — remove the extra ones in the Firewalla app"
+    log_once many_clients "more than one PIA client: $(find_profiles | paste -sd ' ' -) — remove the extra ones in the Firewalla app"
     exit 1
   fi
   if (( rc != 0 )); then
@@ -46,6 +66,7 @@ cmd_keepalive() {
   fi
   read -r id ep server_pub addr <<< "$profile"
   if [[ $(state_get no_client) == 1 ]]; then state_set no_client 0; fi
+  if [[ $(state_get many_clients) == 1 ]]; then state_set many_clients 0; fi
 
   # No interface: the user turned the client off in the app. Not ours to undo.
   local iface="vpn_$id"
@@ -53,6 +74,11 @@ cmd_keepalive() {
 
   local age next
   age=$(handshake_age "$(sudo wg show "$iface" latest-handshakes 2>/dev/null)")
+  # "never" can also mean that Firewalla has just (re)started the client: give
+  # it a moment for its first handshake before registering again.
+  if (( age == 999999999 && force == 0 )) && wait_handshake "$iface"; then
+    age=$(handshake_age "$(sudo wg show "$iface" latest-handshakes 2>/dev/null)")
+  fi
   if (( age < STALE_SECS && force == 0 )); then
     # A working tunnel clears the back-off, so the next outage is repaired at once.
     if [[ $(state_get fail_count) =~ ^[1-9] || $(state_get next_attempt) =~ ^[1-9] ]]; then
@@ -77,22 +103,29 @@ cmd_keepalive() {
     *) fail "server list is not valid JSON" ;;
   esac
   read -r status server_ip server_cn <<< "$resolved"
+  # PIA's list shows a changing subset of its servers, so "not listed" does not
+  # prove that the server is gone; a listed server is a safe choice either way.
   if [[ $status == RETIRED ]]; then
-    log "endpoint $check_ep retired — replacement $server_ip ($server_cn)"
+    log "endpoint $check_ep is not in PIA's list now — using $server_ip ($server_cn)"
   fi
 
   local client_pub
   client_pub=$(client_pubkey "$iface")
   [[ -n $client_pub ]] || fail "cannot read the client public key from $iface"
 
-  if (( dry )); then
+  if (( DRY_RUN )); then
     log "DRY RUN: would addKey $client_pub at https://$server_cn:1337 ($server_ip)"
     exit 0
   fi
 
   local token body parsed new_addr new_pub _dns
-  token=$(get_token) || fail "PIA login failed (no token)"
-  body=$(add_key "$server_ip" "$server_cn" "$client_pub" "$token")
+  token=$(get_token); rc=$?
+  case $rc in
+    0) ;;
+    1) fail "PIA rejected the saved login" ;;
+    *) fail "cannot reach PIA's login server" ;;
+  esac
+  body=$(add_key "$server_ip" "$server_cn" "$client_pub" "$token" 2>&1)
   parsed=$(parse_addkey "$body") || fail "addKey failed: $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
   read -r new_addr new_pub _dns <<< "$parsed"
 

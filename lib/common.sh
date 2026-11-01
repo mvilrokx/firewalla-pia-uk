@@ -20,6 +20,7 @@ STATE_FILE=${STATE_FILE:-$APP_DIR/state}
 LOG_FILE=${LOG_FILE:-$APP_DIR/keepalive.log}
 CREDS_FILE=${CREDS_FILE:-$APP_DIR/credentials}
 CA_FILE=${CA_FILE:-$APP_DIR/share/ca.rsa.4096.crt}
+LOCK_FILE=${LOCK_FILE:-$APP_DIR/keepalive.lock}
 
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
 
