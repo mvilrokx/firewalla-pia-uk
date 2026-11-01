@@ -4,10 +4,10 @@ Watch BBC iPlayer from outside the UK on every device in your house — smart TV
 and Apple TVs too — with a [Firewalla](https://firewalla.com) and a
 [PIA](https://www.privateinternetaccess.com) (Private Internet Access) subscription.
 
-PIA's OpenVPN servers and PIA's Smart DNS do not pass BBC's location check. A
-WireGuard key that is registered through PIA's own API gets a clean UK exit IP
-that BBC accepts. PIA does not give you WireGuard config files, and it retires
-its UK streaming servers about once a week, so the tunnel stops without warning.
+It sets up a PIA WireGuard tunnel to the UK on your Firewalla, sends only BBC
+traffic through it, and repairs the tunnel by itself when PIA changes its servers.
+(PIA's normal OpenVPN profiles do not work for this, because BBC blocks their exit
+IPs.)
 
 This project does three things:
 
@@ -71,23 +71,38 @@ Send only BBC traffic through the tunnel:
    - `vod-hls-uk-live.akamaized.net`
    - `as-hls-uk-live.akamaized.net`
    - `as-dash-uk-live.akamaized.net`
-2. In the phone app, tap **Routes** on the box's main page, then **+**, and make a
-   route with **Matching:** Target List "BBC iPlayer", **On:** All Devices,
-   **Interface:** your PIA WireGuard client, and **Route Preference:** Static.
-   If you later replace the PIA client, open this route under **Routes** and select
-   the new client as **Interface**.
+2. In the phone app, tap **Routes** on the box's main page, then **+**, and set:
+
+   | Field | Value |
+   |---|---|
+   | **Matching** | Target List "BBC iPlayer" |
+   | **On** | All Devices |
+   | **Interface** | your PIA WireGuard client |
+   | **Route Preference** | Static |
+
+   If you replace the PIA client later, open this route under **Routes** and set
+   **Interface** to the new client.
 
 Good to know:
 
-- Devices must use Firewalla's DNS, or the rule does not see their traffic. On an
-  iPhone, turn off **Limit IP Address Tracking** for your home Wi-Fi. In Firefox,
-  if iPlayer says you are outside the UK, set Settings → Privacy & Security →
-  **DNS over HTTPS** to **Off**: with it on, Firefox asks another DNS server.
-- After you change the rule, flush the device's DNS cache. Pausing a video does not
-  do this.
-  - iPhone: airplane mode on and off.
-  - Mac: `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`.
-  - Firefox also keeps its own cache: open `about:networking#dns` and click
+- Devices must use Firewalla's DNS, or the rule does not see their traffic. If
+  iPlayer says you are outside the UK, check these settings:
+  - **iPhone:** turn off **Limit IP Address Tracking** for your home Wi-Fi.
+  - **Safari** (Mac and iPhone): turn off **iCloud Private Relay**, at least for your
+    home Wi-Fi. It sends Safari's traffic around the Firewalla.
+  - **Chrome:** Settings → Privacy and security → Security → **Use secure DNS**:
+    turn it off, or select **With your current service provider**.
+  - **Firefox:** Settings → Privacy & Security → **DNS over HTTPS**: **Off**.
+- After you change the rule, flush the DNS cache on the device you watch on.
+  Pausing a video does not do this.
+  - **iPhone:** airplane mode on and off.
+  - **Mac:** `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`. This
+    is enough for **Safari**, which has no DNS cache of its own; quit it (⌘Q) and
+    open it again to close its old connections.
+  - **Chrome** also keeps its own cache: open `chrome://net-internals/#dns` and
+    click **Clear host cache**, then open `chrome://net-internals/#sockets` and
+    click **Flush socket pools**. Or quit Chrome and start it again.
+  - **Firefox** also keeps its own cache: open `about:networking#dns` and click
     **Clear DNS Cache**, or quit Firefox (⌘Q) and start it again.
 - Target-list changes in the web app reach the box at Firewalla's next refresh. To
   force it, delete the Route rule and make it again with the same list.
@@ -146,7 +161,9 @@ After a failure it waits 15 minutes, then 30, and so on, up to 6 hours. Only one
 run happens at a time, also when you start one by hand while cron starts another.
 
 It writes only to its own folder, to one line in `user_crontab`, and to the three
-profile files of the PIA client.
+profile files of the PIA client. The log stays small: when it is larger than
+200 KB, the keepalive keeps only its last 500 lines. Of the profile backups, it
+keeps the newest 10.
 
 ## Troubleshooting
 
